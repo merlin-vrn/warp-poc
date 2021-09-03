@@ -1,6 +1,8 @@
 #!/usr/bin/env tclsh
 package require Tk
 
+wm title . "Morpher"
+
 grid [ttk::frame .img0] [ttk::frame .cmds] [ttk::frame .img1] -sticky nsew
 grid columnconfigure . 0 -weight 1
 grid rowconfigure . 0 -weight 1
@@ -62,7 +64,7 @@ proc loadimage {i {fname ""}} {
     if {$fname==""} return
 
     $img configure -width 0 -height 0 -file $fname
-    
+
     # размер (scrollregion) обоих холстов ставится таким, чтобы помещалось каждое из изображений.
     set wiNew [image width $img]
     set heNew [image height $img]
@@ -121,6 +123,7 @@ proc addpoint {i x0 y0 x1 y1 } {
     .cmds.tree insert {} end -id point-$i -values [list $i $x0 $y0 $x1 $y1]
     foreach j {0 1} {
         .img$j.cnv create oval [expr {[subst \$x$j]-2}] [expr {[subst \$y$j]-2}] [expr {[subst \$x$j]+2}] [expr {[subst \$y$j]+2}] -outline #000 -width 1 -activeoutline #0F0 -activewidth 2 -tags [list points point-$i]
+        # TODO: привязывать событие по тегу один раз, а в обработчике разбираться, какая из точек сработала, примерно так: https://stackoverflow.com/questions/54731677/tkinter-canvas-extract-object-id-from-event
         .img$j.cnv bind point-$i <ButtonPress-1> [list pointmovestart $j $i %x %y] 
     }
 }
@@ -196,6 +199,7 @@ proc morphingwindow {} {
     } else {
         wm manage .mwin
         wm protocol .mwin WM_DELETE_WINDOW morphingwindow
+        wm title .mwin "Morphing window"
         set morphingwindow_shown 1
         morphingwindow_update
     }

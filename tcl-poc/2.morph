@@ -1,5 +1,5 @@
-loadimage 0 "/home/merlin/Dropbox/warp/img0.png"
-loadimage 1 "/home/merlin/Dropbox/warp/img1.png"
+loadimage 0 "/home/merlin/warp-poc/tcl-poc/img0.png"
+loadimage 1 "/home/merlin/warp-poc/tcl-poc/img1.png"
 set pointcount 31
 addpoint 0 92 91 94 90
 addpoint 1 546 92 523 89
