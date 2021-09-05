@@ -146,23 +146,25 @@ proc find_triangle { tau_name pr } {
     return $tri
 }
 
-# выясняет, на какое из рёбер треугольника c индексом tri попала точка (сообщает индексы концов) или же возвращает 0 для внутренней точки
+# выясняет, на какое из рёбер треугольника c индексом tri попала точка или же возвращает 0 для внутренней точки
+# возвращает: ребро (концы), смежный по этому ребру треугольник, точку, не принадлежащую ребру (чтобы потом не искать)
 proc which_triangle_edge { tau_name tri pr } {
     upvar 1 $tau_name tau
     # функция вызывается в случае, когда уже установлено, что точка принадлежит треугольнику или его границе, и это "листик"
     puts "какому ребру $tri принадлежит точка $pr?"
     lassign [lindex $tau($tri) 0] pi pj pk
+    lassign [lindex $tau($tri) 2] t_i t_j t_k
     if {[is_on_the_edge tau $pr $pi $pj]} {
         puts "... $pi $pj"
-        return [list $pi $pj]
+        return [list $pi $pj $t_k $pk]
     }
     if {[is_on_the_edge tau $pr $pj $pk]} {
         puts "... $pj $pk"
-        return [list $pj $pk]
+        return [list $pj $pk $t_i $pi]
     }
     if {[is_on_the_edge tau $pr $pk $pi]} {
         puts "... $pk $pi"
-        return [list $pk $pi]
+        return [list $pk $pi $t_j $pj]
     }
     puts "... внутри треугольника"
     return 0
@@ -189,6 +191,21 @@ proc legalize_edge { tau_name pr "pipj" } {
     }
 }
 
+# заменяет в треугольнике nei соседство с tri на соседство с new
+# используется в случае, когда tri поделили на части, либо при перевороте ребра,
+# в любом случае, соседней с nei оказалась его часть или замена new
+proc update_neighbourhood { tau_name nei tri new } {
+    upvar 1 $tau_name tau
+    if {$nei=={}} { 
+        # нечего менять в несуществующем соседе 
+        return
+    }
+    # страшная конструкция работает следующим образом:
+    # lsearch находит в блоке смежных треугольников позицию, в которой записан индекс старого треугольника
+    # затем lset устанавливает в эту позицию индекс соответствующего нового треугольника
+    lset tau($nei) 2 [lsearch [lindex $tau($nei) 2] $tri] $new
+}
+
 proc find_delaunay { tau_name points } {
     upvar 1 $tau_name tau
     # "1."
@@ -210,9 +227,9 @@ proc find_delaunay { tau_name points } {
     set tau(p0) $highest_point
     set tau(p-1) {left bottom}
     set tau(p-2) {right top}
-    # Формат данных о треугольнике: список индексов точек, список индексов "дочерних" треугольников
+    # Формат данных о треугольнике: список индексов точек, список индексов "дочерних" треугольников, список смежных треугольников
     # Треугольник создаётся без ссылок (как "листик"); они добавляются при его разбиении или "инвалидации" переворачиванием ребра
-    set tau(t0) {{p0 p-1 p-2} {}}
+    set tau(t0) {{p0 p-1 p-2} {} {}}
     puts "3. Стартовая структура: [array get tau]"
     # "4." здесь нужно вычислить "случайную перестановку", а это значит, что подойдёт любая перестановка — в том числе, текущая
     # "5."
@@ -227,34 +244,87 @@ proc find_delaunay { tau_name points } {
         # "7."
         # в который из уже существующих треугольников-"листиков" попадает новая точка?
         set tri [find_triangle tau p$r]
-        puts "Треугольник $tri, содержащий точку p$r: [lindex $tau($tri) 0]"
+        puts "Треугольник $tri, содержащий точку p$r: $tau($tri)"
         # "8."
         if {[set edge [which_triangle_edge tau $tri p$r]]==0} {
             puts "Точка находится внутри треугольника, разбиваем его на три части"
             # "9."
-            # здесь накопятся новые треугольники
-            set newtri {}
+            # точки, из которых состоит треугольник
             lassign [lindex $tau($tri) 0] pi pj pk
-            set tau(t[incr t]) [list [list p$r $pi $pj] {}]
-            lappend newtri t$t
-            puts "Добавляем треугольник t$t = [lindex $tau(t$t) 0]"
-            set tau(t[incr t]) [list [list p$r $pj $pk] {}]
-            lappend newtri t$t
-            puts "Добавляем треугольник t$t = [lindex $tau(t$t) 0]"
-            set tau(t[incr t]) [list [list p$r $pk $pi] {}]
-            lappend newtri t$t
-            puts "Добавляем треугольник t$t = [lindex $tau(t$t) 0]"
-            # Теперь нужно заполнить поле со ссылками в треугольнике $tri ссылками на наши новые треугольники
-            lset tau($tri) 1 $newtri
+            # соответствующие (противолежащие им) смежные треугольники
+            lassign [lindex $tau($tri) 2] tu tv tw
+            set t_k t[incr t] 
+            set t_i t[incr t] 
+            set t_j t[incr t]
+            set tau($t_k) [list [list p$r $pi $pj] {} {}]
+            set tau($t_i) [list [list p$r $pj $pk] {} {}]
+            set tau($t_j) [list [list p$r $pk $pi] {} {}]
+            # эти треугольники будут смежными друг с другом по двум новым рёбрам, по третьему ребру, оставшемуся
+            # от "родительского" треугольника, каждый из них является смежным с тем треугольником, с которым был
+            # смежен их "родительский" треугольник по этому ребру
+            lset tau($t_k) 2 [list $tw $t_i $t_j]
+            lset tau($t_i) 2 [list $tu $t_j $t_k]
+            lset tau($t_j) 2 [list $tv $t_k $t_i]
+            # во "внешних смежных" треугольниках tu, tv, tw (если они есть) всё ещё указано, что смежным к ним является tri
+            # заменяем его в каждом на тот из новых треугольников, который теперь является смежным
+            update_neighbourhood tau $tw $tri $t_k
+            update_neighbourhood tau $tu $tri $t_i
+            update_neighbourhood tau $tv $tri $t_j
+            puts "Добавляем треугольник $t_k = $tau($t_k)"
+            puts "Добавляем треугольник $t_i = $tau($t_i)"
+            puts "Добавляем треугольник $t_j = $tau($t_j)"
+            # заполняем поле со ссылками в разбиваемом треугольнике $tri ссылками на эти новые треугольники
+            lset tau($tri) 1 [list $t_i $t_j $t_k]
+            # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
             # "10."
             # "11."
             # "12."
         } else {
             # "13."
             # второй случай на рис. 9.7 стр. 200
-            puts "Точка находится на границе $edge"
-            # находим смежный по этому ребру треугольник
+            lassign $edge pi pj nei pk
+            puts "Точка находится на границе $pi $pj, принадлежащей также треугольнику $nei = $tau($nei)"
+            # "внешние" смежные треугольники
+            set tn_jl [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pj]]
+            set tn_il [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pi]]
+            set tn_jk [lindex $tau($nei) 2 [lsearch [lindex $tau($nei) 0] $pj]]
+            set tn_ik [lindex $tau($nei) 2 [lsearch [lindex $tau($nei) 0] $pi]]
+            puts "... смежные треугольники: к $tri - против $pj $tn_jl, против $pi $tn_il; к $nei - против $pj $tn_jk, против $pi $tn_ik" 
             # "14."
+            # находим третью точку (не принадлежащую общему ребру) смежного треугольника nei
+            foreach pl [lindex $tau($nei) 0] {
+                if {($pl!=$pi)&&($pl!=$pj)} {
+                    break
+                }
+            }
+            puts "... новые рёбра: $pk p$r и $pl p$r"
+            # здесь добавляется четыре треугольника
+            set t_jl t[incr t] 
+            set t_il t[incr t] 
+            set t_jk t[incr t]
+            set t_ik t[incr t]
+            set tau($t_jl) [list [list p$r $pk $pi] {} {}]
+            set tau($t_il) [list [list p$r $pj $pk] {} {}]
+            set tau($t_jk) [list [list p$r $pi $pl] {} {}]
+            set tau($t_ik) [list [list p$r $pl $pj] {} {}]
+            # они будут смежными друг к другу, и к тем внешним, к которым были смежны старые треугольники tri и nei
+            lset tau($t_jl) 2 [list $tn_jl $t_jk $t_il]
+            lset tau($t_il) 2 [list $tn_il $t_jl $t_ik]
+            lset tau($t_jk) 2 [list $tn_jk $t_ik $t_jl]
+            lset tau($t_ik) 2 [list $tn_ik $t_il $t_jk]
+            # в смежных треугольниках опять же нужно обновить смежные
+            update_neighbourhood tau $tn_jl $tri $t_jl
+            update_neighbourhood tau $tn_il $tri $t_il
+            update_neighbourhood tau $tn_jk $nei $t_jk
+            update_neighbourhood tau $tn_ik $nei $t_ik
+            puts "Добавляем треугольник $t_jl = $tau($t_jl)"
+            puts "Добавляем треугольник $t_il = $tau($t_il)"
+            puts "Добавляем треугольник $t_jk = $tau($t_jk)"
+            puts "Добавляем треугольник $t_ik = $tau($t_ik)"
+            # заполняем поле со ссылками в разбиваемых треугольниках
+            lset tau($tri) 1 [list $t_jl $t_il]
+            lset tau($nei) 1 [list $t_jk $t_ik]
+            # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
             # "15."
             # "16."
             # "17."
