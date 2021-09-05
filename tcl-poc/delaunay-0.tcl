@@ -6,7 +6,7 @@
 set width 640
 set height 480
 
-set points {
+set points1 {
     { 92  91}
     {546  92}
     {104 396}
@@ -25,11 +25,23 @@ set points {
     {342 257}
 }
 
+set points2 {
+    {0 0}
+    {2 0}
+    {4 0}
+    {1 2}
+    {3 2}
+    {2 4}
+    {3 6}
+    {4 4}
+    {5 2}
+    {6 0}
+}
+
 # вычисляет, является ли pi лексикографически большей, чем pj
-proc lexigraphically_larger { tau_name pi pj } {
-    upvar 1 $tau_name tau
-    lassign $tau($pi) xi yi
-    lassign $tau($pj) xj yj
+proc lexigraphically_larger { pi pj } {
+    lassign $pi xi yi
+    lassign $pj xj yj
     # согласно определению на стр. 204: pi ">" pj, если yi>yj либо yi=yj и xi>xj
     if {$yi>$yj} {
         return 1
@@ -42,27 +54,31 @@ proc lexigraphically_larger { tau_name pi pj } {
     return 0
 }
 
-# выясняет, лежит ли точка pj слева от направленного отрезка pi pk
-proc is_to_the_left { tau_name pj pi pk } {
+# выясняет, лежит ли точка pr слева от направленного отрезка pi pj
+proc is_to_the_left { tau_name pr pi pj } {
     upvar 1 $tau_name tau
     # сначала обработаем "символические" точки (стр. 204)
-    if {$pk=="p-1"} {
-        return [lexigraphically_larger tau $pj $pi]
+    if {$pj=="p-1"} {
+        # прямая в сторону "нижней" точки — пробная должна быть "больше"
+        return [lexigraphically_larger $tau($pr) $tau($pi)]
     }
-    if {$pk=="p-2"} {
-        return [lexigraphically_larger tau $pi $pj]
+    if {$pj=="p-2"} {
+        # прямая в сторону "верхней" точки — пробная должна быть "меньше"
+        return [lexigraphically_larger $tau($pi) $tau($pr)]
     }
     if {$pi=="p-1"} {
-        return [lexigraphically_larger tau $pk $pj]
+        # прямая из "нижней" точки — пробная должна быть "меньше"
+        return [lexigraphically_larger $tau($pj) $tau($pr)]
     }
     if {$pi=="p-2"} {
-        return [lexigraphically_larger tau $pj $pk]
+        # прямая из "верхней" точки — пробная должна быть "больше"
+        return [lexigraphically_larger $tau($pr) $tau($pj)]
     }
-    # если ни одна из точек pi, pk не является символической — распаковываем координаты и используем простую линейную алгебру
+    # если ни одна из точек pi, pj не является символической — распаковываем координаты и используем простую линейную алгебру
     lassign $tau($pi) xi yi
+    lassign $tau($pr) xr yr
     lassign $tau($pj) xj yj
-    lassign $tau($pk) xk yk
-    if {($xk-$xi)*($yj-$yi)>($xj-$xi)*($yk-$yi)} {
+    if {($xj-$xi)*($yr-$yi)>($xr-$xi)*($yj-$yi)} {
         return 1
     }
     return 0
@@ -138,34 +154,40 @@ proc legalize_edge { tau_name pr "pipj" } {
 proc find_delaunay { tau_name points } {
     upvar 1 $tau_name tau
     # "1."
-    set highest_point [lindex [lsort -decreasing -real -index 1 [lsort -decreasing -real -index 0 $points]] 0]
+    # поиск наибольшего с точки зрения lexigraphically_larger
+    set highest_point [lindex $points 0]
+    set r 0
+    for {set t 0} {$t<[llength $points]} {incr t} {
+        if {[lexigraphically_larger [lindex $points $t] $highest_point]} {
+            set highest_point [lindex $points $t]
+            set r $t
+        }
+    }
+    # удаляем эту точку из набора
+    set points [lreplace $points $r $r]
     puts "1. Лексикографически верхняя точка: p0 = $highest_point"
-    # "2." ???
+    # "2." не предполагается никаких действий; логика этого пункта заложена в проверках принадлежности и валидности
     # "3."
 #    array set tau [list p0 $highest_point p-1 ... p-2 ... t0 {{p0 p-1 p-2} {}}]
     set tau(p0) $highest_point
     set tau(p-1) ...
     set tau(p-2) ...
     # Формат данных о треугольнике: список индексов точек, список индексов "дочерних" треугольников
-    # Треугольник создаётся без ссылок, они появляются при его "уничтожении" как треугольника Делоне
+    # Треугольник создаётся без ссылок (как "листик"); они добавляются при его разбиении или "инвалидации" переворачиванием ребра
     set tau(t0) {{p0 p-1 p-2} {}}
     puts "3. Стартовая структура: [array get tau]"
-    # "4." ???
+    # "4." здесь нужно вычислить "случайную перестановку", а это значит, что подойдёт любая перестановка — в том числе, текущая
     # "5."
-    # индексирует точки
+    # r индексирует точки
     set r 0
-    # индексирует треугольники
+    # t индексирует треугольники
     set t 0
     foreach point $points {
-        if {$point==$highest_point} {
-            # эту точку мы обработали первой
-            continue
-        }
         # "6."
         set tau(p[incr r]) $point
         puts "Добавляем точку: p$r = $point"
         # "7."
-        # в который из уже существующих треугольников попадает новая точка?
+        # в который из уже существующих треугольников-"листиков" попадает новая точка?
         set tri [find_triangle tau p$r]
         puts "Треугольник $tri, содержащий точку p$r: [lindex $tau($tri) 0]"
         # "8."
@@ -200,7 +222,7 @@ proc find_delaunay { tau_name points } {
     }
 }
 
-find_delaunay delaunay $points
+find_delaunay delaunay $points2
 
 puts "Результат триангуляции: треугольники"
 foreach {idx val} [array get delaunay t*] {
