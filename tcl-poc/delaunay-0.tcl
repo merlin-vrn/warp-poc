@@ -174,9 +174,50 @@ proc which_triangle_edge { tau_name tri pr } {
     return 0
 }
 
-proc is_illegal { tau_name "pipj" } {
+proc is_symbolic { pr } {
+    return [expr ("$pr"=="p-1")||("$pr"=="p-2")]
+}
+
+proc point_index { pr } {
+    return [string range $pk 1 end]
+}
+
+# вычисляет, является ли валидным ребро $pi $pj в текущей диаграмме. Новую точку и треугольник сообщаем, чтобы не искать
+proc is_illegal { tau_name pi pj tri pr } {
     upvar 1 $tau_name tau
-    ...
+    # находим третью точку (не принадлежащую ребру) треугольника
+    foreach pl [lindex $tau($tri) 0] {
+        if {($pl!=$pi)&&($pl!=$pj)} {
+            break
+        }
+    }
+    puts "третья точка треугольника $tri: $pl "
+    # находим смежный треугольник и третью точку
+    set nei [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pl]]
+    if {$nei=={}} {
+        # только три ребра не имеют за собой смежных треугольников — рёбра p0 p-1 p-2.
+        puts "нет смежного треугольника - ребро $pi $pj валидно"
+        return 0
+    }
+    foreach pk [lindex $tau($nei) 0] {
+        if {($pk!=$pi)&&($pk!=$pj)} {
+            break
+        }
+    }
+    puts "третья точка смежного треугольника $nei: $pk"
+    if {[is_symbolic $pi]||[is_symbolic $pj]||[is_symbolic $pk]||[is_symbolic $pl]} {
+        # если хоть одна точка символическая, тест тоже символический
+        if {min([string range $pk 1 end],[string range $pl 1 end])<min([string range $pi 1 end],[string range $pj 1 end])} {
+            puts "... символический тест — ребро $pi $pj (vs $pk $pl) валидно"
+            return 0
+        } else {
+            puts "... символический тест — ребро $pi $pj (vs $pk $pl) невалидно"
+            return 1
+        }
+    }
+    # вычисляем согласно лемме 9.4, стр. 195
+    
+    return 0
 }
 
 proc replace_edge { tau_name "pipj" "prpk" } {
@@ -184,14 +225,18 @@ proc replace_edge { tau_name "pipj" "prpk" } {
     ...
 }
 
-proc legalize_edge { tau_name pr "pipj" } {
+# проверяет на валидность и рекурсивно исправляет ребро pi pj, которое могло стать невалидным
+# после добавления точки pr. Эти три точки — вершины треугольника tri, его мы сообщаем, чтобы не искать
+proc legalize_edge { tau_name pr pi pj tri } {
     upvar 1 $tau_name tau
-    if [is_illegal tau "pipj"] {
+    puts "Проверка ребра $pi $pj (треугольник $tri, после добавления точки $pr)"
+    if {[is_illegal tau $pi $pj $tri $pr]} {
+        puts "... невалидно"
         # переворот границы — создаёт треугольники и вешает ссылки! Самая странная операция во всём алгоритме
-        replace_edge tau "pipj" "prpk"
+#        replace_edge tau "pipj" "prpk"
         # рекурсивно проверяем на валидность все новосозданные рёбра и исправляем, если требуется
-        legalize_edge tau $pr "pipk"
-        legalize_edge tau $pr "pkpj"
+#        legalize_edge tau $pr "pipk"
+#        legalize_edge tau $pr "pkpj"
     }
 }
 
@@ -281,8 +326,11 @@ proc find_delaunay { tau_name points } {
             lset tau($tri) 1 [list $t_i $t_j $t_k]
             # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
             # "10."
+            legalize_edge tau p$r $pi $pj $t_k
             # "11."
+            legalize_edge tau p$r $pj $pk $t_i
             # "12."
+            legalize_edge tau p$r $pk $pi $t_j
         } else {
             # "13."
             # второй случай на рис. 9.7 стр. 200
