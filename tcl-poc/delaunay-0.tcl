@@ -1,7 +1,11 @@
 #!/usr/bin/env tclsh
 #package require Tk
 
-# adding new point: build a Delaunay triangulation
+# Построение триангуляции Делоне
+
+# поддержка разноцветного вывода
+source "ansi.tcl"
+namespace import ansi::*
 
 set width 640
 set height 480
@@ -220,7 +224,7 @@ proc find_delaunay { tau_name points } {
     }
     # удаляем эту точку из набора
     set points [lreplace $points $r $r]
-    puts "1. Лексикографически верхняя точка: p0 = $highest_point"
+    puts "[g]1.[n] Лексикографически верхняя точка: [c]p0[n] = $highest_point"
     # "2." не предполагается никаких действий; логика этого пункта заложена в проверках принадлежности и валидности
     # "3."
 #    array set tau [list p0 $highest_point p-1 {left bottom} p-2 {right top} t0 {{p0 p-1 p-2} {}}]
@@ -230,7 +234,7 @@ proc find_delaunay { tau_name points } {
     # Формат данных о треугольнике: список индексов точек, список индексов "дочерних" треугольников, список смежных треугольников
     # Треугольник создаётся без ссылок (как "листик"); они добавляются при его разбиении или "инвалидации" переворачиванием ребра
     set tau(t0) {{p0 p-1 p-2} {} {}}
-    puts "3. Стартовая структура: [array get tau]"
+    puts "[g]3.[n] Стартовая структура: [array get tau]"
     # "4." здесь нужно вычислить "случайную перестановку", а это значит, что подойдёт любая перестановка — в том числе, текущая
     # "5."
     # r индексирует точки
@@ -240,14 +244,14 @@ proc find_delaunay { tau_name points } {
     foreach point $points {
         # "6."
         set tau(p[incr r]) $point
-        puts "Добавляем точку: p$r = $point"
+        puts "[g]6.[n] Добавляем точку: [c]p$r[n] = $point"
         # "7."
         # в который из уже существующих треугольников-"листиков" попадает новая точка?
         set tri [find_triangle tau p$r]
-        puts "Треугольник $tri, содержащий точку p$r: $tau($tri)"
-        # "8."
+        puts "[g]7.[n] Треугольник [c]$tri[n], содержащий точку p$r: $tau($tri)"
         if {[set edge [which_triangle_edge tau $tri p$r]]==0} {
-            puts "Точка находится внутри треугольника, разбиваем его на три части"
+            # "8."
+            puts "[g]8.[n] Точка находится [y]внутри[n] треугольника, разбиваем его на три части"
             # "9."
             # точки, из которых состоит треугольник
             lassign [lindex $tau($tri) 0] pi pj pk
@@ -270,9 +274,9 @@ proc find_delaunay { tau_name points } {
             update_neighbourhood tau $tw $tri $t_k
             update_neighbourhood tau $tu $tri $t_i
             update_neighbourhood tau $tv $tri $t_j
-            puts "Добавляем треугольник $t_k = $tau($t_k)"
-            puts "Добавляем треугольник $t_i = $tau($t_i)"
-            puts "Добавляем треугольник $t_j = $tau($t_j)"
+            puts "Добавляем треугольник [c]$t_k[n] = $tau($t_k)"
+            puts "Добавляем треугольник [c]$t_i[n] = $tau($t_i)"
+            puts "Добавляем треугольник [c]$t_j[n] = $tau($t_j)"
             # заполняем поле со ссылками в разбиваемом треугольнике $tri ссылками на эти новые треугольники
             lset tau($tri) 1 [list $t_i $t_j $t_k]
             # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
@@ -283,7 +287,7 @@ proc find_delaunay { tau_name points } {
             # "13."
             # второй случай на рис. 9.7 стр. 200
             lassign $edge pi pj nei pk
-            puts "Точка находится на границе $pi $pj, принадлежащей также треугольнику $nei = $tau($nei)"
+            puts "[g]13.[n] Точка находится [y]на границе[n] $pi $pj, принадлежащей также треугольнику [c]$nei[n] = $tau($nei)"
             # "внешние" смежные треугольники
             set tn_jl [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pj]]
             set tn_il [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pi]]
@@ -317,10 +321,10 @@ proc find_delaunay { tau_name points } {
             update_neighbourhood tau $tn_il $tri $t_il
             update_neighbourhood tau $tn_jk $nei $t_jk
             update_neighbourhood tau $tn_ik $nei $t_ik
-            puts "Добавляем треугольник $t_jl = $tau($t_jl)"
-            puts "Добавляем треугольник $t_il = $tau($t_il)"
-            puts "Добавляем треугольник $t_jk = $tau($t_jk)"
-            puts "Добавляем треугольник $t_ik = $tau($t_ik)"
+            puts "Добавляем треугольник [c]$t_jl[n] = $tau($t_jl)"
+            puts "Добавляем треугольник [c]$t_il[n] = $tau($t_il)"
+            puts "Добавляем треугольник [c]$t_jk[n] = $tau($t_jk)"
+            puts "Добавляем треугольник [c]$t_ik[n] = $tau($t_ik)"
             # заполняем поле со ссылками в разбиваемых треугольниках
             lset tau($tri) 1 [list $t_jl $t_il]
             lset tau($nei) 1 [list $t_jk $t_ik]
