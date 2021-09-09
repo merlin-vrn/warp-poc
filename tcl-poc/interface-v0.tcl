@@ -117,7 +117,6 @@ proc addpoint_calculate {j x y} {
     addpoint $i {*}$l {*}$l
 }
 
-# TODO: ttk::treeview для точек вместо массива
 proc addpoint {i x0 y0 x1 y1 } {
     # вызывается при щелчке на холсте, через обёртку, рассчитывающие координаты с учётом положения прокрутки
     .cmds.tree insert {} end -id point-$i -values [list $i $x0 $y0 $x1 $y1]
