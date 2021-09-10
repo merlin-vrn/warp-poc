@@ -10,7 +10,7 @@ grid [ttk::scrollbar .img.vsb -command [list .img.cnv yview] -orient vertical] -
 grid [ttk::scrollbar .img.hsb -command [list .img.cnv xview] -orient horizontal] -sticky nsew -row 1
 grid columnconfigure .img 0 -weight 1
 grid rowconfigure .img 0 -weight 1
-.img.cnv configure -yscrollcommand [list .img.vsb set] -xscrollcommand [list .img.hsb set] -scrollregion {0 0 100 100}
+.img.cnv configure -yscrollcommand [list .img.vsb set] -xscrollcommand [list .img.hsb set] -scrollregion { -50 -50 100 100 }
 bind .img.cnv <Motion> [list displaycoo %x %y]
 
 ttk::frame .cmds.treeframe
@@ -133,8 +133,10 @@ proc update_geometry { } {
     }
     
     # the calculation as per https://math.stackexchange.com/a/1460096
-    
-    set M [expr $Ax*$By-$Ay*$Bx+$Bx*$Cy-$By*$Cx+$Cx*$Ay-$Cy*$Ax]
+    #     | Ax Ay 1 |
+    # M = | Bx By 1 |
+    #     | Cx Cy 1 |
+    set M [expr $Ax*($By-$Cy)+$Bx*($Cy-$Ay)+$Cx*($Ay-$By)]
 
     if {$M==0} {
         set x 0
@@ -148,6 +150,9 @@ proc update_geometry { } {
         set Ar [expr $Ax*$Ax+$Ay*$Ay]
         set Br [expr $Bx*$Bx+$By*$By]
         set Cr [expr $Cx*$Cx+$Cy*$Cy]
+        #      | Ax²+Ay² Ay 1 |        | Ax²+Ay² Ax 1 |        | Ax²+Ay² Ax Ay |  
+        # Mx = | Bx²+By² By 1 |   My = | Bx²+By² Bx 1 |   Mr = | Bx²+By² Bx By | 
+        #      | Cx²+Cy² Cy 1 |        | Cx²+Cy² Cx 1 |        | Cx²+Cy² Cx Cy | 
         set Mx [expr $Ar*($By-$Cy)+$Br*($Cy-$Ay)+$Cr*($Ay-$By)]
         set My [expr $Ar*($Bx-$Cx)+$Br*($Cx-$Ax)+$Cr*($Ax-$Bx)]
         set Mr [expr $Ar*$Bx*$Cy+$Br*$Cx*$Ay+$Cr*$Ax*$By-$Ar*$Cx*$By-$Br*$Ax*$Cy-$Cr*$Bx*$Ay]
@@ -162,7 +167,10 @@ proc update_geometry { } {
             set r${p}y [expr $[subst ${p}y]-$Dy]
             set r${p}r [expr [subst \$r${p}x*\$r${p}x+\$r${p}y*\$r${p}y]]
         }
-        set Mi [expr $rAx*$rBy*$rCr+$rBx*$rCy*$rAr+$rCx*$rAy*$rBr-$rAx*$rCy*$rBr-$rBx*$rAy*$rCr-$rCx*$rBy*$rAr]
+        #      | Ax-Dx Ay-Dy (Ax-Dx)²+(Ay-Dy)² |
+        # Mi = | Bx-Dx By-Dy (Bx-Dx)²+(By-Dy)² |
+        #      | Cx-Dx Cy-Dy (Cx-Dx)²+(Cy-Dy)² |
+        set Mi [expr ($rAx*$rBy-$rBx*$rAy)*$rCr+($rBx*$rCy-$rCx*$rBy)*$rAr+($rCx*$rAy-$rAx*$rCy)*$rBr]
         set inside_circle [expr (($Mi>0)!=($M>0))?"No":"Yes"]
     }
 

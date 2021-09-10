@@ -7,6 +7,10 @@
 source "ansi.tcl"
 namespace import ansi::*
 
+proc tcl::mathfunc::sqr { x } {
+    return [expr $x*$x]
+}
+
 set width 640
 set height 480
 
@@ -182,6 +186,41 @@ proc point_index { pr } {
     return [string range $pk 1 end]
 }
 
+# основано на проверке как в points-in-a-cricle.tcl
+# вычисляется два определителя и          | xi yi 1 |         | xi-xk yi-yk (xi-xk)²+(yi-yk)² |
+# сравниваются их знаки. Одинаковые   M = | xj yj 1 |    Mi = | xj-xk yj-yk (xj-xk)²+(yj-yk)² |
+# знаки означают нахождение точки         | xr yr 1 |         | xr-xk yr-yk (xr-xk)²+(yr-yk)² |
+# внутри окружности, заданной тремя другими точками. Знак определителя M по сути означает порядок
+# точек i, j, r против часовой стрелки либо по часовой, M=0 — точки принадлежат одной прямой
+# Mi означает положение точки k относительно окружности, проходящей через i, j, r, причём 0
+# означает принадлежность окружности, знак как у M — внутри, знак противоположный — вне. 
+proc is_inside_circle {xi yi xj yj xr yr xk yk} {
+    set M [expr $xi*($yj-$yr)+$xj*($yr-$yi)+$xr*($yi-$yj)]
+    if {$M==0} {
+        puts "... треугольник [r]вырожден[n], точки ($xi, $yi), ($xj, $yj), ($xr, $yr) принадлежат одной прямой!"
+        return 0
+    }
+    if {$M>0} { puts ">>>[r]M=$M![n]<<<"
+    set _xi [expr $xi-$xk]
+    set _xj [expr $xj-$xk]
+    set _xr [expr $xr-$xk]
+    set _yi [expr $yi-$yk]
+    set _yj [expr $yj-$yk]
+    set _yr [expr $yr-$yk]
+    set Mi [expr ($_xi*$_xi+$_yi*$_yi)*($_xj*$_yr-$_xr*$_yj)+($_xj*$_xj+$_yj*$_yj)*($_xr*$_yi-$_xi*$_yr)+($_xr*$_xr+$_yr*$_yr)*($_xi*$_yj-$_xj*$_yi)]
+    if {$Mi==0} {
+        puts "... все четыре точки ($xi, $yi), ($xj, $yj), ($xr, $yr), ($xk, $yk) [y]принадлежат одной окружности[n]!"
+        return 0
+    }
+    if {($Mi>0)==($M>0)} {
+        puts "... точка ($xk, $yk) лежит [m]внутри окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
+        return 1
+    }
+    puts "... точка ($xk, $yk) лежит [g]вне окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
+    
+    return 0
+}
+
 # вычисляет, является ли валидным ребро $pi $pj в текущей диаграмме. Новую точку и треугольник сообщаем, чтобы не искать
 proc is_illegal { tau_name pi pj tri pr } {
     upvar 1 $tau_name tau
@@ -216,7 +255,10 @@ proc is_illegal { tau_name pi pj tri pr } {
         }
     }
     # вычисляем согласно лемме 9.4, стр. 195
-    
+    if {[is_inside_circle {*}$tau($pi) {*}$tau($pj) {*}$tau($pr) {*}$tau($pk)]} {
+        puts "... тест на принадлежность окружности — ребро $pi $pj (vs $pk $pl) невалидно"
+        return 1
+    }
     return 0
 }
 
@@ -378,9 +420,13 @@ proc find_delaunay { tau_name points } {
             lset tau($nei) 1 [list $t_jk $t_ik]
             # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
             # "15."
+            legalize_edge tau p$r $pi $pl $t_jk
             # "16."
+            legalize_edge tau p$r $pl $pj $t_ik
             # "17."
+            legalize_edge tau p$r $pj $pk $t_il
             # "18."
+            legalize_edge tau p$r $pk $pi $t_jl
         }
     }
 }
