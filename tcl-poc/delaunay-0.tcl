@@ -117,22 +117,22 @@ proc is_on_the_edge { tau_name pr pi pj } {
 proc belongs_to_triangle { tau_name pr tri } {
     upvar 1 $tau_name tau
     lassign [lindex $tau($tri) 0] pi pj pk
-    puts "принадлежность $pr ($tau($pr)) треугольнику $tri: $pi ($tau($pi)), $pj ($tau($pj)), $pk ($tau($pk))"
+#    puts "принадлежность $pr ($tau($pr)) треугольнику $tri: $pi ($tau($pi)), $pj ($tau($pj)), $pk ($tau($pk))"
     if {[is_to_the_left tau $pr $pi $pj]} {
-        puts "... $pr ($tau($pr)) левее отрезка $pi ($tau($pi)), $pj ($tau($pj)) — не принадлежит"
+#        puts "    $pr ($tau($pr)) левее отрезка $pi ($tau($pi)), $pj ($tau($pj)) — не принадлежит"
         return 0
     }
     if {[is_to_the_left tau $pr $pj $pk]} {
-        puts "... $pr ($tau($pr)) левее отрезка $pj ($tau($pj)), $pk ($tau($pk)) — не принадлежит"
+#        puts "    $pr ($tau($pr)) левее отрезка $pj ($tau($pj)), $pk ($tau($pk)) — не принадлежит"
         return 0
     }
     if {[is_to_the_left tau $pr $pk $pi]} {
-        puts "... $pr ($tau($pr)) левее отрезка $pk ($tau($pk)), $pi ($tau($pi)) — не принадлежит"
+#        puts "    $pr ($tau($pr)) левее отрезка $pk ($tau($pk)), $pi ($tau($pi)) — не принадлежит"
         return 0
     }
     # поскольку в is_to_the_left все условия строгие, то мы отсеяли все случаи попадания точек *за* границу треугольника,
     # значит, в оставшемся случае точка находится внутри или на границе треугольника, эти случаи мы различим в функции which_triangle_edge
-    puts "... принадлежит"
+#    puts "    принадлежит"
     return 1
 }
 
@@ -142,7 +142,7 @@ proc find_triangle { tau_name pr } {
     # начальное значение, далее будем "спускаться" по ссылкам, до тех пор, пока не найдём треугольник-"листик" (без ссылок)
     set tri t0
     while {[lindex $tau($tri) 1]!={}} {
-        puts "Треугольник $tri содержит ссылки: [lindex $tau($tri) 1]"
+        puts "    треугольник $tri содержит ссылки: [lindex $tau($tri) 1]"
         # проверяем их все
         foreach tri [lindex $tau($tri) 1] {
             if {[belongs_to_triangle tau $pr $tri]} {
@@ -163,18 +163,18 @@ proc which_triangle_edge { tau_name tri pr } {
     lassign [lindex $tau($tri) 0] pi pj pk
     lassign [lindex $tau($tri) 2] t_i t_j t_k
     if {[is_on_the_edge tau $pr $pi $pj]} {
-        puts "... $pi $pj"
+        puts "    $pi $pj"
         return [list $pi $pj $t_k $pk]
     }
     if {[is_on_the_edge tau $pr $pj $pk]} {
-        puts "... $pj $pk"
+        puts "    $pj $pk"
         return [list $pj $pk $t_i $pi]
     }
     if {[is_on_the_edge tau $pr $pk $pi]} {
-        puts "... $pk $pi"
+        puts "    $pk $pi"
         return [list $pk $pi $t_j $pj]
     }
-    puts "... внутри треугольника"
+    puts "    внутри треугольника"
     return 0
 }
 
@@ -197,7 +197,7 @@ proc point_index { pr } {
 proc is_inside_circle {xi yi xj yj xr yr xk yk} {
     set M [expr $xi*($yj-$yr)+$xj*($yr-$yi)+$xr*($yi-$yj)]
     if {$M==0} {
-        puts "... треугольник [r]вырожден[n], точки ($xi, $yi), ($xj, $yj), ($xr, $yr) принадлежат одной прямой!"
+        puts "    треугольник [r]вырожден[n], точки ($xi, $yi), ($xj, $yj), ($xr, $yr) принадлежат одной прямой!"
         return 0
     }
     if {$M>0} {
@@ -211,14 +211,14 @@ proc is_inside_circle {xi yi xj yj xr yr xk yk} {
     set _yr [expr $yr-$yk]
     set Mi [expr ($_xi*$_xi+$_yi*$_yi)*($_xj*$_yr-$_xr*$_yj)+($_xj*$_xj+$_yj*$_yj)*($_xr*$_yi-$_xi*$_yr)+($_xr*$_xr+$_yr*$_yr)*($_xi*$_yj-$_xj*$_yi)]
     if {$Mi==0} {
-        puts "... все четыре точки ($xi, $yi), ($xj, $yj), ($xr, $yr), ($xk, $yk) [y]принадлежат одной окружности[n]!"
+        puts "    все четыре точки ($xi, $yi), ($xj, $yj), ($xr, $yr), ($xk, $yk) [y]принадлежат одной окружности[n]!"
         return 0
     }
     if {($Mi>0)==($M>0)} {
-        puts "... точка ($xk, $yk) лежит [m]внутри окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
+        puts "    точка ($xk, $yk) лежит [m]внутри окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
         return 1
     }
-    puts "... точка ($xk, $yk) лежит [g]вне окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
+    puts "    точка ($xk, $yk) лежит [g]вне окружности[n], определяемой ($xi, $yi), ($xj, $yj), ($xr, $yr)"
     
     return 0
 }
@@ -230,7 +230,7 @@ proc is_illegal { tau_name pi pj tri pr } {
     set nei [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pr]]
     if {$nei=={}} {
         # только три ребра не имеют за собой смежных треугольников — рёбра p0 p-1 p-2.
-        puts "... нет смежного треугольника - ребро $pi $pj валидно"
+        puts "    нет смежного треугольника - ребро $pi $pj [g]валидно[n]"
         return 0
     }
     foreach pk [lindex $tau($nei) 0] {
@@ -238,28 +238,35 @@ proc is_illegal { tau_name pi pj tri pr } {
             break
         }
     }
-    puts "... третья точка смежного треугольника $nei: $pk"
+    puts "    третья точка смежного треугольника $nei: $pk"
     if {[is_symbolic $pi]||[is_symbolic $pj]||[is_symbolic $pk]} { 
         # если хоть одна точка символическая, тест тоже символический; pr не может быть символической — она только что добавлена
         if {min([string range $pk 1 end],[string range $pr 1 end])<min([string range $pi 1 end],[string range $pj 1 end])} {
-            puts "... символический тест — ребро $pi $pj (vs $pk $pr) валидно"
+            puts "    символический тест — ребро $pi $pj (vs $pk $pr) [g]валидно[n]"
             return 0
         } else {
-            puts "... символический тест — ребро $pi $pj (vs $pk $pr) невалидно"
-            if {($tri=="t9")&&($pr=="p3")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t11")&&($pr=="p4")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t22")&&($pr=="p6")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t27")&&($pr=="p7")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t32")&&($pr=="p8")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t33")&&($pr=="p8")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t37")&&($pr=="p9")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
-            if {($tri=="t38")&&($pr=="p9")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+            # на стр. 204 (внизу) и 205 написано, что ребро невалидно. Однако, тут что-то не так. Очень много валидных рёбер почему-то попадают сюда.
+            puts "    символический тест — ребро $pi $pj (vs $pk $pr) [y]может быть[n] [r]невалидно[n]"
+            # поэтому добавляем дополнительную проверку
+            if {[is_to_the_left tau $pr $pj $pi]} {
+                puts "    точка $pr находится слева от $pj $pi — ребро [y]всё-таки[n] [g]валидно[n]"
+                return 0
+            }
+# костыли для тестового набора points2
+#            if {($tri=="t9")&&($pr=="p3")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t11")&&($pr=="p4")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t22")&&($pr=="p6")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t27")&&($pr=="p7")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t32")&&($pr=="p8")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t33")&&($pr=="p8")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t37")&&($pr=="p9")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
+#            if {($tri=="t38")&&($pr=="p9")} { puts "        [R]КОСТЫЛЬ[n]"; return 0 } ;# страшный костыль
             return 1
         }
     }
     # вычисляем согласно лемме 9.4, стр. 195
     if {[is_inside_circle {*}$tau($pi) {*}$tau($pj) {*}$tau($pr) {*}$tau($pk)]} {
-        puts "... тест на принадлежность окружности — ребро $pi $pj (vs $pk $pr) невалидно"
+        puts "    тест на принадлежность окружности — ребро $pi $pj (vs $pk $pr) [r]невалидно[n]"
         return 1
     }
     return 0
@@ -270,13 +277,13 @@ proc replace_edge { tau_name pi pj tri pr } {
     upvar 1 $tau_name tau
     puts "Заменяем ребро: [b]$pi $pj[n]"
     set nei [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pr]]
-    puts "... смежный треугольник: $nei $tau($nei)"
+    puts "    смежный треугольник: $nei $tau($nei)"
     foreach pk [lindex $tau($nei) 0] {
         if {($pk!=$pi)&&($pk!=$pj)} {
             break
         }
     }
-    puts "... третья точка смежного треугольника $nei: $pk"
+    puts "    третья точка смежного треугольника $nei: $pk"
     # здесь мы заменяем ребро pi pj на pr pk, при этом вместо треугольников
     # tri(pr pi pj) и nei(pk pj pi) появляются t_i(pr pi pk) и t_j(pr pk pj)
     puts "Новое ребро: [c]$pr $pk[n]"
@@ -285,25 +292,22 @@ proc replace_edge { tau_name pi pj tri pr } {
     set tn_ir [lindex $tau($nei) 2 [lsearch [lindex $tau($nei) 0] $pi]] ;# смежный по ребру jk
     set tn_jk [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pj]] ;# смежный по ребру ri
     set tn_ik [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pi]] ;# смежный по ребру rj
-    # ii. создаём новые треугольники
+    # ii. создаём новые треугольники и указываем в них соседей
     set t_i t[incr tau(Tri)] 
     set t_j t[incr tau(Tri)]
-    set tau($t_i) [list [list $pr $pi $pk] {} {}]
-    set tau($t_j) [list [list $pr $pk $pj] {} {}]
+    set tau($t_i) [list [list $pr $pi $pk] {} [list $tn_jr $t_j $tn_jk]]
+    set tau($t_j) [list [list $pr $pk $pj] {} [list $tn_ir $tn_ik $t_i]]
+    puts "Добавляем треугольник [c]$t_i[n] = $tau($t_i)"
+    puts "Добавляем треугольник [c]$t_j[n] = $tau($t_j)"
     # iii. Обновляем соседей
     update_neighbourhood tau $tn_jr $nei $t_i
     update_neighbourhood tau $tn_ir $nei $t_j
     update_neighbourhood tau $tn_jk $tri $t_i
     update_neighbourhood tau $tn_ik $tri $t_j
-    # iv. вешаем в новых треугольниках соседей
-    lset tau($t_i) 2 [list $tn_jr $t_j $tn_jk] 
-    lset tau($t_j) 2 [list $tn_ir $tn_ik $t_i] 
-    # v. вешаем в старых треугольниках ссылки на новые (стр. 203, рис. 9.9)
+    # vi. вешаем в старых треугольниках ссылки на новые (стр. 203, рис. 9.9)
     lset tau($tri) 1 [list $t_i $t_j]
     lset tau($nei) 1 [list $t_i $t_j]
-    puts "Добавляем треугольник [c]$t_i[n] = $tau($t_i)"
-    puts "Добавляем треугольник [c]$t_j[n] = $tau($t_j)"
-    
+    # v. Чтобы в в legalize_edge не искать эту информацию, сообщаем
     return [list $t_i $t_j $pk]
 }
 
@@ -313,7 +317,7 @@ proc legalize_edge { tau_name pr pi pj tri } {
     upvar 1 $tau_name tau
     puts "Проверка ребра $pi $pj (треугольник $tri, после добавления точки $pr)"
     if {[is_illegal tau $pi $pj $tri $pr]} {
-        puts "... невалидно"
+        puts "    невалидно"
         # переворот границы — создаёт треугольники и вешает ссылки! Самая странная операция во всём алгоритме
         lassign [replace_edge tau $pi $pj $tri $pr] t_i t_j pk
         # рекурсивно проверяем на валидность новосозданные рёбра и исправляем, если требуется
@@ -388,23 +392,20 @@ proc find_delaunay { tau_name points } {
             set t_k t[incr tau(Tri)] 
             set t_i t[incr tau(Tri)] 
             set t_j t[incr tau(Tri)]
-            set tau($t_k) [list [list p$r $pi $pj] {} {}]
-            set tau($t_i) [list [list p$r $pj $pk] {} {}]
-            set tau($t_j) [list [list p$r $pk $pi] {} {}]
             # эти треугольники будут смежными друг с другом по двум новым рёбрам, по третьему ребру, оставшемуся
             # от "родительского" треугольника, каждый из них является смежным с тем треугольником, с которым был
             # смежен их "родительский" треугольник по этому ребру
-            lset tau($t_k) 2 [list $tw $t_i $t_j]
-            lset tau($t_i) 2 [list $tu $t_j $t_k]
-            lset tau($t_j) 2 [list $tv $t_k $t_i]
-            # во "внешних смежных" треугольниках tu, tv, tw (если они есть) всё ещё указано, что смежным к ним является tri
-            # заменяем его в каждом на тот из новых треугольников, который теперь является смежным
-            update_neighbourhood tau $tw $tri $t_k
-            update_neighbourhood tau $tu $tri $t_i
-            update_neighbourhood tau $tv $tri $t_j
+            set tau($t_k) [list [list p$r $pi $pj] {} [list $tw $t_i $t_j]]
+            set tau($t_i) [list [list p$r $pj $pk] {} [list $tu $t_j $t_k]]
+            set tau($t_j) [list [list p$r $pk $pi] {} [list $tv $t_k $t_i]]
             puts "Добавляем треугольник [c]$t_k[n] = $tau($t_k)"
             puts "Добавляем треугольник [c]$t_i[n] = $tau($t_i)"
             puts "Добавляем треугольник [c]$t_j[n] = $tau($t_j)"
+            # во "внешних смежных" треугольниках tu, tv, tw (если они есть) всё ещё указано, что смежным к ним
+            # является tri заменяем его в каждом на тот из новых треугольников, который теперь является смежным
+            update_neighbourhood tau $tw $tri $t_k
+            update_neighbourhood tau $tu $tri $t_i
+            update_neighbourhood tau $tv $tri $t_j
             # заполняем поле со ссылками в разбиваемом треугольнике $tri ссылками на эти новые треугольники
             lset tau($tri) 1 [list $t_i $t_j $t_k]
             # проверяем валидность рёбер и, при необходимости, рекурсивно исправляем
@@ -418,13 +419,13 @@ proc find_delaunay { tau_name points } {
             # "13."
             # второй случай на рис. 9.7 стр. 200
             lassign $edge pi pj nei pk
-            puts "[g]13.[n] Точка находится [y]на границе[n] $pi $pj, принадлежащей также треугольнику [c]$nei[n] = $tau($nei)"
+            puts "[g]13.[n] Точка [y]принадлежит ребру[n] $pi $pj, составляющему также треугольник [c]$nei[n] = $tau($nei)"
             # "внешние" смежные треугольники
             set tn_jl [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pj]]
             set tn_il [lindex $tau($tri) 2 [lsearch [lindex $tau($tri) 0] $pi]]
             set tn_jk [lindex $tau($nei) 2 [lsearch [lindex $tau($nei) 0] $pj]]
             set tn_ik [lindex $tau($nei) 2 [lsearch [lindex $tau($nei) 0] $pi]]
-            puts "... смежные треугольники: к $tri - против $pj $tn_jl, против $pi $tn_il; к $nei - против $pj $tn_jk, против $pi $tn_ik" 
+            puts "    смежные треугольники: к $tri - против $pj $tn_jl, против $pi $tn_il; к $nei - против $pj $tn_jk, против $pi $tn_ik" 
             # "14."
             # находим третью точку (не принадлежащую общему ребру) смежного треугольника nei
             foreach pl [lindex $tau($nei) 0] {
@@ -432,30 +433,26 @@ proc find_delaunay { tau_name points } {
                     break
                 }
             }
-            puts "... новые рёбра: $pk p$r и $pl p$r"
+            puts "    новые рёбра: [c]$pk p$r[n] и [c]$pl p$r[n]"
             # здесь добавляется четыре треугольника
             set t_jl t[incr tau(Tri)] 
             set t_il t[incr tau(Tri)] 
             set t_jk t[incr tau(Tri)]
             set t_ik t[incr tau(Tri)]
-            set tau($t_jl) [list [list p$r $pk $pi] {} {}]
-            set tau($t_il) [list [list p$r $pj $pk] {} {}]
-            set tau($t_jk) [list [list p$r $pi $pl] {} {}]
-            set tau($t_ik) [list [list p$r $pl $pj] {} {}]
             # они будут смежными друг к другу, и к тем внешним, к которым были смежны старые треугольники tri и nei
-            lset tau($t_jl) 2 [list $tn_jl $t_jk $t_il]
-            lset tau($t_il) 2 [list $tn_il $t_jl $t_ik]
-            lset tau($t_jk) 2 [list $tn_jk $t_ik $t_jl]
-            lset tau($t_ik) 2 [list $tn_ik $t_il $t_jk]
+            set tau($t_jl) [list [list p$r $pk $pi] {} [list $tn_jl $t_jk $t_il]]
+            set tau($t_il) [list [list p$r $pj $pk] {} [list $tn_il $t_jl $t_ik]]
+            set tau($t_jk) [list [list p$r $pi $pl] {} [list $tn_jk $t_ik $t_jl]]
+            set tau($t_ik) [list [list p$r $pl $pj] {} [list $tn_ik $t_il $t_jk]]
+            puts "Добавляем треугольник [c]$t_jl[n] = $tau($t_jl)"
+            puts "Добавляем треугольник [c]$t_il[n] = $tau($t_il)"
+            puts "Добавляем треугольник [c]$t_jk[n] = $tau($t_jk)"
+            puts "Добавляем треугольник [c]$t_ik[n] = $tau($t_ik)"
             # в смежных треугольниках опять же нужно обновить смежные
             update_neighbourhood tau $tn_jl $tri $t_jl
             update_neighbourhood tau $tn_il $tri $t_il
             update_neighbourhood tau $tn_jk $nei $t_jk
             update_neighbourhood tau $tn_ik $nei $t_ik
-            puts "Добавляем треугольник [c]$t_jl[n] = $tau($t_jl)"
-            puts "Добавляем треугольник [c]$t_il[n] = $tau($t_il)"
-            puts "Добавляем треугольник [c]$t_jk[n] = $tau($t_jk)"
-            puts "Добавляем треугольник [c]$t_ik[n] = $tau($t_ik)"
             # заполняем поле со ссылками в разбиваемых треугольниках
             lset tau($tri) 1 [list $t_jl $t_il]
             lset tau($nei) 1 [list $t_jk $t_ik]
@@ -472,8 +469,7 @@ proc find_delaunay { tau_name points } {
     }
 }
 
-find_delaunay delaunay $points2
-puts [array get delaunay]
+find_delaunay delaunay $points1
 puts "Результат триангуляции: треугольники"
 foreach {idx val} [array get delaunay t*] {
     # нас интересуют только "листики", ...
