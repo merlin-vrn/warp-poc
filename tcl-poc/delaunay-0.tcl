@@ -1,5 +1,4 @@
 #!/usr/bin/env tclsh
-#package require Tk
 
 # Построение триангуляции Делоне
 
@@ -7,14 +6,10 @@
 source "ansi.tcl"
 namespace import ansi::*
 
-proc tcl::mathfunc::sqr { x } {
-    return [expr $x*$x]
-}
-
 set width 640
 set height 480
 
-set points1 {
+set points1_t {
     { 92  91}
     {546  92}
     {104 396}
@@ -31,6 +26,33 @@ set points1 {
     {275 164}
     {355 198}
     {342 257}
+    {246 265}
+    {247 138}
+    {358 149}
+    {245 240}
+    {359 250}
+    {384 198}
+    {273 203}
+    {245 191}
+    {313 138}
+    {310 241}
+    {309 162}
+    {378 170}
+    {377 228}
+    {245 217}
+    {246 166}
+}
+set points1 {}
+for {set i 0} {$i<640} {incr i 40} {
+    lappend points1 [list $i 0]
+    lappend points1 [list $i 479]
+}
+for {set j 0} {$j<480} {incr j 40} {
+    lappend points1 [list 0 $j]
+    lappend points1 [list 639 $j]
+}
+foreach p $points1_t {
+    lappend points1 $p
 }
 
 set points2 {
@@ -45,6 +67,17 @@ set points2 {
     {5 2}
     {6 0}
 }
+
+set points3 {}
+for {set i 0} {$i<160} {incr i 40} {
+    lappend points3 [list $i 0]
+    lappend points3 [list $i 119]
+}
+for {set j 0} {$j<120} {incr j 40} {
+    lappend points3 [list 0 $j]
+    lappend points3 [list 159 $j]
+}
+lappend points3 {80 60}
 
 # вычисляет, является ли pi лексикографически большей, чем pj
 proc lexigraphically_larger { pi pj } {
@@ -117,22 +150,22 @@ proc is_on_the_edge { tau_name pr pi pj } {
 proc belongs_to_triangle { tau_name pr tri } {
     upvar 1 $tau_name tau
     lassign [lindex $tau($tri) 0] pi pj pk
-#    puts "принадлежность $pr ($tau($pr)) треугольнику $tri: $pi ($tau($pi)), $pj ($tau($pj)), $pk ($tau($pk))"
+    puts "Принадлежность $pr ($tau($pr)) треугольнику $tri: $pi ($tau($pi)), $pj ($tau($pj)), $pk ($tau($pk))"
     if {[is_to_the_left tau $pr $pi $pj]} {
-#        puts "    $pr ($tau($pr)) левее отрезка $pi ($tau($pi)), $pj ($tau($pj)) — не принадлежит"
+        puts "    $pr ($tau($pr)) левее отрезка $pi ($tau($pi)), $pj ($tau($pj)) — не принадлежит"
         return 0
     }
     if {[is_to_the_left tau $pr $pj $pk]} {
-#        puts "    $pr ($tau($pr)) левее отрезка $pj ($tau($pj)), $pk ($tau($pk)) — не принадлежит"
+        puts "    $pr ($tau($pr)) левее отрезка $pj ($tau($pj)), $pk ($tau($pk)) — не принадлежит"
         return 0
     }
     if {[is_to_the_left tau $pr $pk $pi]} {
-#        puts "    $pr ($tau($pr)) левее отрезка $pk ($tau($pk)), $pi ($tau($pi)) — не принадлежит"
+        puts "    $pr ($tau($pr)) левее отрезка $pk ($tau($pk)), $pi ($tau($pi)) — не принадлежит"
         return 0
     }
     # поскольку в is_to_the_left все условия строгие, то мы отсеяли все случаи попадания точек *за* границу треугольника,
     # значит, в оставшемся случае точка находится внутри или на границе треугольника, эти случаи мы различим в функции which_triangle_edge
-#    puts "    принадлежит"
+    puts "    принадлежит"
     return 1
 }
 
@@ -470,6 +503,7 @@ proc find_delaunay { tau_name points } {
 }
 
 find_delaunay delaunay $points1
+
 puts "Результат триангуляции: треугольники"
 foreach {idx val} [array get delaunay t*] {
     # нас интересуют только "листики", ...
@@ -481,4 +515,22 @@ foreach {idx val} [array get delaunay t*] {
     if {$pk=="p-1"} { continue }
     if {$pk=="p-2"} { continue }
     puts "$idx => $delaunay($pi), $delaunay($pj), $delaunay($pk)"
+}
+
+# Визуализация
+package require Tk
+grid [canvas .cnv -width $width -height $height]
+
+foreach {idx val} [array get delaunay t*] {
+    # нас интересуют только "листики", ...
+    if {[lindex $val 1]!={}} { continue }
+    lassign [lindex $val 0] pi pj pk
+    # ..., не включающие "символических точек" (первая точка треугольника не может оказаться "символической")
+    if {$pj=="p-1"} { continue }
+    if {$pj=="p-2"} { continue }
+    if {$pk=="p-1"} { continue }
+    if {$pk=="p-2"} { continue }
+    .cnv create line {*}$delaunay($pi) {*}$delaunay($pj) -tags "line-ij"
+    .cnv create line {*}$delaunay($pj) {*}$delaunay($pk) -tags "line-jk"
+    .cnv create line {*}$delaunay($pk) {*}$delaunay($pi) -tags "line-ki"
 }
