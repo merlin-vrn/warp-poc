@@ -41,7 +41,7 @@ proc compute_voronoi_diagram { points } {
         events add $y "site" $x
     }
 
-    puts "Очередь на [y]старте[n]: $events"
+    puts "Очередь на [y]старте[n]: [events dump]"
 
     # 2. Пока есть события,
     while {[events len]>0} { 
