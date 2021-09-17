@@ -5,7 +5,7 @@ proc ::tcl::mathfunc::sqr {x} { expr {$x*$x} }
 # эта команда возвращает последовательно значения "prefix0", "prefix1", и. т. д., при каждом очередном вызове
 # если prefix не задан, он равен name
 proc nextid_coroutine { prefix } { yield ; for {set i 0} {true} {incr i} { yield "$prefix$i"} }
-proc nextid { name { prefix "" } } { if {!$prefix} { set prefix $name } ; coroutine $name nextid_coroutine $prefix }
+proc nextid { name { prefix "" } } { if {$prefix==""} { set prefix $name } ; coroutine $name nextid_coroutine $prefix }
 
 # использование очереди: [priority_queue name] создаёт команду [name] (и служебную [name_coroutine])
 # добавить элементы: [name add prio ...], причём prio - считается частью элемента
