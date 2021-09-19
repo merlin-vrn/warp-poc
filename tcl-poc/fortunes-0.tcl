@@ -87,9 +87,10 @@ proc handle_site_event { state_name x y } {
     set subpath [dict get $state($item) path]
 
     puts "    [b]$item[n] => $state($item) - дуга над сайтом [b]$split_site[n]; она является потомком [y]$parent[n] в положении \"[y]$subpath[n]\""
-    # TODO Если к этой дуге было привязано событие circle — помечаем его как "ложную тревогу"
+    # Если к этой дуге было привязано событие circle — помечаем его как "ложную тревогу"
     if {[dict exists $state($item) circle]} {
-        puts "    [R]окружность [y][dict get $state($item) circle][n]"
+        puts "    событие окружность [r][dict get $state($item) circle][n] ($state([dict get $state($item) circle])) - ложная тревога"
+        set state([dict get $state($item) circle]) 0
     }
 
     # 3. Заменяем найденный объект поддеревом из двух или трёх дуг
@@ -204,40 +205,102 @@ proc handle_site_event { state_name x y } {
     # TODO: избежать вычисления одной и той же окружности дважды
     # TODO: вот у нас два раза возникла одна и та же окружность, "справа" и "слева". Какую из дуг она схлопнет? Обе?
     foreach arc $arcs_to_check {
-        if {!([dict exists $state($arc) left]&&[dict exists $state($arc) right])} {
-            # эта дуга расположена на краю береговой линии
-            continue
-        }
-        set larc [dict get $state($arc) left]
-        set rarc [dict get $state($arc) right]
-        puts "Проверяем тройку [y]$larc[n]-[y]$arc[n]-[y]$rarc[n]"
-        set lsite [dict get $state($larc) site]
-        set site [dict get $state($arc) site]
-        set rsite [dict get $state($rarc) site]
-        set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($site)] {*}[dict get $state($rsite)]]
-        if {$c==0} {
-            puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$site[n] [dict get $state($site)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
-        } else {
-            lassign $c cx cy r
-            puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$site[n] [dict get $state($site)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
-            # Если нижняя точка окружности выше текущего события, вообще не паримся
-            if {$cy+$r<$y} {
-                continue
-            }
-            # Приоритетом события "окружность" будет её нижняя точка, а остальную информацию добавим на всякий случай
-            events add [expr {$cy+$r}] "circle" $cx $cy $r $arc
-            # TODO: Как-нибудь запишем в дугу, что с ней связано событие-окружность, вообще-то тут нужна ссылка на событие, вдруг его придётся инвалидировать
-            dict set state($arc) circle [list $cx $cy $r]
+        if {[set circle [check_add_circle state $arc $y]]!=0} {
+            dict set state($arc) circle $circle
+            puts "    дуга [y]$arc[n] ($state($arc)) может слопнуться в событии [c]$circle[n] ($state($circle))"
         }
     }
     
 }
 
-# обрабатывает событие "окружность"
-proc handle_circle_event { state_name d } {
+# Проверяет тройку дуг с указанной дугой в середине на предмет схлопывания и добавляет событие "окружность"
+proc check_add_circle { state_name carc y } {
     upvar 1 $state_name state
 
-    puts "Новая окружность: [c]$d[n]"
+    if {!([dict exists $state($carc) left]&&[dict exists $state($carc) right])} {
+        # эта дуга расположена на краю береговой линии
+        return 0
+    }
+    set larc [dict get $state($carc) left]
+    set rarc [dict get $state($carc) right]
+    puts "Проверяем тройку [y]$larc[n]-[y]$carc[n]-[y]$rarc[n]"
+    set lsite [dict get $state($larc) site]
+    set csite [dict get $state($carc) site]
+    set rsite [dict get $state($rarc) site]
+    set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($csite)] {*}[dict get $state($rsite)]]
+    if {$c==0} {
+        puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
+        return 0
+    }
+    lassign $c cx cy r
+    puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
+    # Если нижняя точка окружности выше текущего события, вообще не паримся
+    if {$cy+$r<$y} {
+        return 0
+    }
+    # Приоритетом события "окружность" будет её нижняя точка, а остальную информацию добавим на всякий случай
+    set circle [new_circle]
+    set state($circle) [list $cx $cy $r $carc]
+    events add [expr {$cy+$r}] "circle" $circle
+    return $circle
+}
+
+# обрабатывает событие "окружность"
+proc handle_circle_event { state_name circle } {
+    upvar 1 $state_name state
+    if {$state($circle)==0} {
+        puts "Окружность [r]$circle[n] — событие отменено"
+        return
+    }
+    puts "Окружность: [m]$circle[n] ($state($circle))"
+    lassign $state($circle) x y r arc
+    set larc [dict get $state($arc) left]
+    set rarc [dict get $state($arc) right]
+    set parent [dict get $state($arc) parent]
+    set subpath [dict get $state($arc) path]
+    if {$subpath=="left"} { set sibpath "right" } else { set sibpath "left" }
+    set parparent [dict get $state($parent) parent]
+    set parsubpath [dict get $state($parent) path]
+    if {$parsubpath=="left"} { set parsibpath "right" } else { set parsibpath "left" }
+    set sibling [dict get $state($parent) $sibpath]
+    puts "    схлопнулась дуга: [r]$arc[n] ($state($arc)) (потомок [b]$parent.[dict get $state($arc) path][n]))"
+    puts "    также удаляется узел: [r]$parent[n] ($state($parent))"
+    puts "    связи в старом дереве:"
+    puts "                [y]$parparent[n] -($parsibpath)→ [g][dict get $state($parparent) $parsibpath][n]"
+    puts "                ↑ ↓($parsubpath)"
+    puts "                [r]$parent[n] -($sibpath)→ [g]$sibling[n]"
+    puts "                ↑ ↓($subpath)"
+    if {[dict exists $state($larc) left]} { set _leftmostarc "[g][dict get $state($larc) left][n] = " } else { set _leftmostarc "      " }
+    if {[dict exists $state($rarc) right]} { set _rightmostarc " = [g][dict get $state($rarc) right][n]" } else { set _rightmostarc "" }
+    puts "    $_leftmostarc[g]$larc[n] = [r]$arc[n] = [g]$rarc[n]$_rightmostarc"
+    
+    # удаляем из береговой линии
+    dict set state($larc) right $rarc
+    dict set state($rarc) left $larc
+    # удаляем из дерева
+    dict set state($parparent) $parsubpath $sibling 
+    dict set state($sibling) parent $parparent
+    dict set state($sibling) path $parsubpath
+    # обновляем точки разрыва
+    
+    # Правило breakpoint: в дереве
+    # - левый край breakpoint равен правому краю breakpoint из левого поддерева
+    # - правый край breakpoint равен левому краю breakpoint из правого поддерева
+    # Если поддерево (левая или правая) является листом, то оно само и является краем
+    # Т.о. дерево выглядит так (точки разрыва - индексы сайтов, один и тот же сайт может породить более чем одну дугу):
+    #                   {a b}
+    #               {c a}   {b d}
+    #           {a c} {a2} {b1} {d b}
+    #         {a1} {c}         {d} {b2}
+    # При удалении узла-листа {a2}, удалится также внутренний узел {c a}, и на его место встанет его левое поддерево — узел {a c}.
+    # Узел {a c} окажется левым поддеревом корневого узла {a b}, его правый край — c; левый край узла {a b} заменяется на правый край левого поддерева, c:
+    #                   {c b}
+    #               {a c}   {b d}
+    #            {a1} {c}  {b1} {d b}
+    #                          {d} {b2}
+    # Если вся эта конструкция была правым поддеревом некоего другого узла, то правый край узла, бывшего {a b}, выглядел как {... a},
+    # и после удаления нужно там заменить правый край на c - новый левый край правого узла, т.е. родительнский узел для {c b} станет {... c}.
+    # И так далее, если это было левое поддерево некоторого другого дерева, его левый край был {a ...}, а станет {c ...}.
 }
 
 # Рассчитывает диаграмму Вороного для набора точек points
@@ -250,6 +313,7 @@ proc compute_voronoi_diagram { points } {
     nextid new_arc a
     nextid new_site s
     nextid new_edge e
+    nextid new_circle c
 
     # 1. Инициализируем очередь событиями типа "сайт" — входные точки
     foreach p $points {
