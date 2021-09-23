@@ -44,6 +44,19 @@ proc find_circle { x1 y1 x2 y2 x3 y3 } {
     return [list $x $y $r]
 }
 
+# если к дуге arc привязано событие окружность, то удаляем его и помечаем событие, как невалидное
+proc check_invalidate_circle { state_name arc } {
+    upvar 1 $state_name state
+
+    if {[dict exists $state($arc) circle]} {
+        puts "    событие окружность [r][dict get $state($arc) circle][n] ($state([dict get $state($arc) circle])) - ложная тревога"
+        set state([dict get $state($arc) circle]) 0
+    }
+    
+    # освобождаем дугу от события
+    dict unset state($arc) circle
+}
+
 # обрабатывает событие "сайт", расположенный в точке x y
 proc handle_site_event { state_name x y } {
     upvar 1 $state_name state
@@ -88,10 +101,7 @@ proc handle_site_event { state_name x y } {
 
     puts "    [b]$item[n] => $state($item) - дуга над сайтом [b]$split_site[n]; она является потомком [y]$parent[n] в положении \"[y]$subpath[n]\""
     # Если к этой дуге было привязано событие circle — помечаем его как "ложную тревогу"
-    if {[dict exists $state($item) circle]} {
-        puts "    событие окружность [r][dict get $state($item) circle][n] ($state([dict get $state($item) circle])) - ложная тревога"
-        set state([dict get $state($item) circle]) 0
-    }
+    check_invalidate_circle state $item
 
     # 3. Заменяем найденный объект поддеревом из двух или трёх дуг
     set arcs_to_check {} ;# сюда положим дуги, которые могут вызвать событие окружность (проверим в п. 5)
@@ -205,10 +215,7 @@ proc handle_site_event { state_name x y } {
     # TODO: избежать вычисления одной и той же окружности дважды
     # TODO: вот у нас два раза возникла одна и та же окружность, "справа" и "слева". Какую из дуг она схлопнет? Обе?
     foreach arc $arcs_to_check {
-        if {[set circle [check_add_circle state $arc $y]]!=0} {
-            dict set state($arc) circle $circle
-            puts "    дуга [y]$arc[n] ($state($arc)) может слопнуться в событии [c]$circle[n] ($state($circle))"
-        }
+        check_add_circle state $arc $y
     }
     
 }
@@ -236,13 +243,59 @@ proc check_add_circle { state_name carc y } {
     puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
     # Если нижняя точка окружности выше текущего события, вообще не паримся
     if {$cy+$r<$y} {
+        puts "    нижняя точка окружности [expr {$cy+$r}] лежит выше текущего события $y"
         return 0
     }
     # Приоритетом события "окружность" будет её нижняя точка, а остальную информацию добавим на всякий случай
     set circle [new_circle]
     set state($circle) [list $cx $cy $r $carc]
     events add [expr {$cy+$r}] "circle" $circle
+    
+    dict set state($сarc) circle $circle
+    puts "    дуга [y]$carc[n] ($state($carc)) может слопнуться в событии \[[expr {$cy+$r}]\] [c]$circle[n] ($state($circle))"
+
     return $circle
+}
+
+# вычисляет уровень вложенности (расстояние до корня дерева) объекта item
+proc find_level { state_name item } {
+    upvar 1 $state_name state
+    set level 0
+    set cur $item
+    while {$cur!="T"} {
+        set cur [dict get $state($cur) parent]
+        incr level
+    }
+    return $level
+}
+
+# находит ближайшего общего предка объектов l и r
+proc find_nearest_common_ancestor { state_name l r } {
+    upvar 1 $state_name state
+    set ldiff [expr [find_level state $l]-[find_level state $r]]
+    # спускаемся с длинной ветки до одинаковой глубины
+    set _l $l
+    set _r $r
+    if {$ldiff>0} {
+        puts "    $l вложено глубже"
+        for {set i 0} {$i<$ldiff} {incr i} {
+            set _l [dict get $state($_l) parent]
+            puts "    $_l < "
+        }
+    } else {
+        puts "    $r вложено глубже"
+        for {set i $ldiff} {$i<0} {incr i} {
+            set _r [dict get $state($_r) parent]
+            puts "    > $_r"
+        }
+    }
+    # теперь спускаемся по обеим веткам до тех пор, пока не встретимся
+    while {$_l!=$_r} {
+        set _l [dict get $state($_l) parent]
+        set _r [dict get $state($_r) parent]
+        puts "    $_l $_r"
+    }
+    return $_l
 }
 
 # обрабатывает событие "окружность"
@@ -273,16 +326,18 @@ proc handle_circle_event { state_name circle } {
     if {[dict exists $state($larc) left]} { set _leftmostarc "[g][dict get $state($larc) left][n] = " } else { set _leftmostarc "      " }
     if {[dict exists $state($rarc) right]} { set _rightmostarc " = [g][dict get $state($rarc) right][n]" } else { set _rightmostarc "" }
     puts "    $_leftmostarc[g]$larc[n] = [r]$arc[n] = [g]$rarc[n]$_rightmostarc"
+
+    # 1. Удаляем схлопнувшуюся дугу и всё, что с ней связано
     
-    # удаляем из береговой линии
+    # 1.1 удаляем из береговой линии
     dict set state($larc) right $rarc
     dict set state($rarc) left $larc
-    # удаляем из дерева
+    # 1.2 удаляем из дерева
     dict set state($parparent) $parsubpath $sibling 
     dict set state($sibling) parent $parparent
     dict set state($sibling) path $parsubpath
-    # обновляем точки разрыва
-    
+    # 1.3 обновляем точки разрыва
+
     # Правило breakpoint: в дереве
     # - левый край breakpoint равен правому краю breakpoint из левого поддерева
     # - правый край breakpoint равен левому краю breakpoint из правого поддерева
@@ -301,6 +356,26 @@ proc handle_circle_event { state_name circle } {
     # Если вся эта конструкция была правым поддеревом некоего другого узла, то правый край узла, бывшего {a b}, выглядел как {... a},
     # и после удаления нужно там заменить правый край на c - новый левый край правого узла, т.е. родительнский узел для {c b} станет {... c}.
     # И так далее, если это было левое поддерево некоторого другого дерева, его левый край был {a ...}, а станет {c ...}.
+    #
+    # Другой способ осознания той же структуры: следует понимать внутренние узлы как "среднюю" точку между узлами-листьями.
+    # Листья всегда связаны с сайтами, а "внутренние" узлы их разделяют. Какие листья узел разделяет, их сайты и составляют его breakpoint.
+    #
+    # Алгоритм: находим общего предка новых "соседних" дуг и устанавливаем их сайты в качестве точки разрыва этого предка
+    set nca [find_nearest_common_ancestor state $larc $rarc]
+    set lsite [dict get $state($larc) site]
+    set rsite [dict get $state($rarc) site]
+    puts "    Ближайший общий предок $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
+    dict set state($nca) breakpoint [list $lsite $rsite]
+    
+    # 1.4 Удаляем все события окружность, которые включали удалённую дугу
+    check_invalidate_circle state $larc
+    check_invalidate_circle state $rarc
+    
+    # 2. TODO добавить вершину и полурёбра
+
+    # 3. Новые тройки добавляем как события окружность
+#    check_add_circle state $larc [expr {$y+$r}]
+#    check_add_circle state $rarc [expr {$y+$r}]
 }
 
 # Рассчитывает диаграмму Вороного для набора точек points
@@ -357,6 +432,12 @@ proc compute_voronoi_diagram { points } {
     # 7.
     # 8.
     return {}
+}
+
+set points {
+    {0.0 0.0}
+    {4.0 2.0}
+    {3.0 3.0}
 }
 
 set V [compute_voronoi_diagram $points]
