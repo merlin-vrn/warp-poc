@@ -379,14 +379,27 @@ proc handle_circle_event { state_name circle } {
     set rsite [dict get $state($rarc) site]
     puts "    Ближайший общий предок $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
     dict set state($nca) breakpoint [list $lsite $rsite]
-    
+
     # 1.4 Удаляем все события окружность, которые включали удалённую дугу
     check_invalidate_circle state $larc
     check_invalidate_circle state $rarc
     
     # 2. TODO добавить вершину и полурёбра
+    
+    # вершина имеет отношение к трём сайтам, которые определяют эту окружность
+    set csite [dict get $state($arc) site]
+    
     set vertex [new_vertex]
-    set state($vertex) [list x $x y $y site [dict get $state($arc) site]]
+    set state($vertex) [list x $x y $y sites [list $lsite $csite $rsite]]
+    
+    # на этой вершине заканчиваются несколько рёбер
+    # рёбра разделяют каждую пару сайтов; мы тут знаем только один конец ребра
+    set he_cr [new_halfedge]
+    set he_lc [new_halfedge]
+    set he_rl [new_halfedge]
+    set state($he_cr) [list lsite $csite rsite $rsite vertex $vertex]
+    set state($he_lc) [list lsite $lsite rsite $csite vertex $vertex]
+    set state($he_rl) [list lsite $rsite rsite $lsite vertex $vertex]
     
     # 3. Новые тройки добавляем как события окружность TODO: это работает неправильно :(
     check_add_circle state $larc [expr {$y+$r}]
@@ -454,17 +467,33 @@ proc compute_voronoi_diagram { points } {
         print_beachline state
     }
 
-    puts [array get state]
+    #puts [array get state]
     # 7.
     # 8.
-    set vertices {}
-    set vsites {}
-    foreach {k v} [array get state v*] {
-        lappend vertices [list [dict get $v x] [dict get $v y]]
-        lappend vsites [list [dict get $v x] [dict get $v y] {*}$state([dict get $v site])]
+    array set half_edges {}
+    array set full_edges {}
+    foreach {k v} [array get state h*] {
+        puts "Полуребро [y]$k[n] $v"
+        dict with v {
+            set my_sid "$lsite.$rsite" ;# индекс этого ребра
+            set tw_sid "$rsite.$lsite" ;# индекс его двойника
+            if {[info exists half_edges($my_sid)]} {
+                puts "    [R]такое полуребро уже было - $half_edges($my_sid)![n]"
+                continue
+            }
+            set half_edges($my_sid) [list id $k {*}$v]
+            if {[info exists half_edges($tw_sid)]} {
+                set twin [dict get $half_edges($tw_sid) id]
+                set tver [dict get $half_edges($tw_sid) vertex]
+                puts "    нашлась вторая половина полуребра: [g]$twin[n] $half_edges($tw_sid)"
+                dict_mset half_edges($my_sid) twin $twin end $tver
+                dict_mset half_edges($tw_sid) twin $k end $vertex
+                set full_edges(f[incr i]) [list $lsite $rsite $vertex $tver]
+            }
+        }
     }
-
-    return [list vertices $vertices vsites $vsites]
+    
+    return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get full_edges]]
 }
 
 set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0}}
@@ -475,21 +504,50 @@ puts "[C]Диаграмма Вороного:[n] $V"
 # Визуализация
 package require Tk
 grid [canvas .cnv -width $width -height $height]
+.cnv bind clicktoinfo <ButtonPress-1> clicktoinfo
 
-set P_r 2
+set S_r 3
+set S_style {-outline #000 -fill #000 -width 1 -activeoutline #F00 -activefill #F00 -activewidth 2 -tags {point clicktoinfo}}
 set V_r 2
+set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #F0F -activewidth 2 -tags {vertex clicktoinfo}}
+set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
+set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge}}
+set D_style {-fill #000 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
 set scale 30
+#set scale 1
 
-foreach p [dict get $V vsites] {
-    lassign $p x y sx sy
-    .cnv create line [expr {$x*$scale}] [expr {$y*$scale}] [expr {$sx*$scale}] [expr {$sy*$scale}] -fill #000 -width 1 -activewidth 2 -tags line
+dict for {k v} $V {
+    switch -glob $k {
+        v* { dict with v {
+            foreach site $sites {
+                lassign [dict get $V $site] sx sy
+                #.cnv create line [expr {$x*$scale}] [expr {$y*$scale}] [expr {$sx*$scale}] [expr {$sy*$scale}] {*}$L_style
+            }
+            set cnv_ids([.cnv create oval [expr {$x*$scale-$V_r}] [expr {$y*$scale-$V_r}] [expr {$x*$scale+$V_r}] [expr {$y*$scale+$V_r}] {*}$V_style]) $k
+        } }
+        s* { 
+            lassign $v sx sy
+            set cnv_ids([.cnv create oval [expr {$sx*$scale-$S_r}] [expr {$sy*$scale-$S_r}] [expr {$sx*$scale+$S_r}] [expr {$sy*$scale+$S_r}] {*}$S_style]) $k
+        }
+        f* {
+            lassign $v sl sr vs ve
+            set vs [dict get $V $vs]
+            set ve [dict get $V $ve]
+            lassign [dict get $V $sl] sx1 sy1
+            lassign [dict get $V $sr] sx2 sy2
+            set x1 [dict get $vs x]
+            set y1 [dict get $vs y]
+            set x2 [dict get $ve x]
+            set y2 [dict get $ve y]
+            .cnv create line [expr {$x1*$scale}] [expr {$y1*$scale}] [expr {$x2*$scale}] [expr {$y2*$scale}] {*}$E_style
+            .cnv create line [expr {$sx1*$scale}] [expr {$sy1*$scale}] [expr {$sx2*$scale}] [expr {$sy2*$scale}] {*}$D_style
+        }
+    }
 }
 
-foreach p $points {
-    lassign $p x y
-    .cnv create oval [expr {$x*$scale-$P_r}] [expr {$y*$scale-$P_r}] [expr {$x*$scale+$P_r}] [expr {$y*$scale+$P_r}] -outline #000 -fill #000 -width 1 -activeoutline #0F0 -activewidth 2 -tags point
-}
-foreach p [dict get $V vertices] {
-    lassign $p x y
-    .cnv create oval [expr {$x*$scale-$V_r}] [expr {$y*$scale-$V_r}] [expr {$x*$scale+$V_r}] [expr {$y*$scale+$V_r}] -outline #00F -fill #00F -width 1 -activeoutline #0FF -activewidth 2 -tags vertex
+proc clicktoinfo { } {
+    global V cnv_ids
+    # определяем, по какому элементу canvas кликнули, а потом по массиву cnv_ids преобразуем в элемент диаграммы Вороного
+    set cnv_id [.cnv find withtag current]
+    puts "[m]$cnv_ids($cnv_id)[n] [dict get $V $cnv_ids($cnv_id)]"
 }
