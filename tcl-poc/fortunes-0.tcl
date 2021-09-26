@@ -496,7 +496,7 @@ proc compute_voronoi_diagram { points } {
     return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get full_edges]]
 }
 
-set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0}}
+set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 
 set V [compute_voronoi_diagram $points]
 puts "[C]Диаграмма Вороного:[n] $V"
