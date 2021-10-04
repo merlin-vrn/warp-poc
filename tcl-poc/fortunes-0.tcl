@@ -136,11 +136,11 @@ proc handle_site_event { state_name site } {
         set narc [new_arc]
         set redge [new_edge]
         set state($narc) [dict create site $site parent $redge]
-        set state($redge) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] $y] edir vertical]
-        # TODO: Здесь должно быть две половинки ребра, но точка разрыва одна. Поэтому, делаем служебное значение edir "vertical".
-        # При проверке, сближаются ли точки разрыва, это значение как бы действует в направлении директрисы. Как только данная граница
-        # с чем-нибудь соединится, т.е. схлопнется непосредственно прилегающая к ней левая или правая дуга, значение мы как бы 
-        # "израсходуем" полуребро "в направлении директрисы", и заменим это специальное значение на вектор "вертикально от директрисы"
+        set state($redge) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] -Inf] edir [list 0 Inf]]
+        # TODO: Здесь должно быть две половинки ребра, но точка разрыва одна.
+        # При проверке, сближаются ли точки разрыва, это значение действует в направлении директрисы. Как только данная граница
+        # с чем-нибудь соединится, т.е. схлопнется непосредственно прилегающая к ней левая или правая дуга, мы как бы 
+        # "израсходуем" полуребро "в направлении директрисы", и заменим это специальное значение на вектор "вертикально от директрисы", заодно узнаем и начало вектора
         dict set state($item) parent $redge
         if {$x>[lindex $state($split_site) 0]} { ;# Новая дуга справа
             if {[dict exists $state($item) right]} {
@@ -187,14 +187,12 @@ proc handle_site_event { state_name site } {
         set vx [expr {$sy-$y}]
         set vy [expr {$x-$sx}]
         set py [expr {$vy*$vy/(2.0*$vx)+($sy+$y)/2.0}] ;# Точка на параболе над новым сайтом: y=(x-sx)²/(2(sy-y))+(sy+y)/2
-        puts [format "    [Y]разбиваемая парабола: y=%g (x-%g)² + %g; точка разбиения: x=%g, y=%g[n]" [expr {1.0/(2*$vx)}] $sx [expr {($sy+$y)/2.0}] $x $py]
-        puts [format "    [Y]прямая: %g x + %g y = %g; направление на $ledge: %g, %g[n]" $vy [expr {-$vx}] [expr {($x*$x+$y*$y-$sx*$sx-$sy*$sy)/2.0}] $vx $vy]
-
         set state($carc) [dict create site $site left $item right $rarc parent $ledge path right] ;# средний кусочек — дуга от нового сайта
         puts [format "    новая дуга [c]$carc[n] разбивает [b]$item[n] на две части в точке %g, %g" $x $py]
         set state($ledge) [dict create breakpoint [list $split_site $site] left $item right $carc  parent $redge path left estart [list $x $py] edir [list $vx $vy]]
         puts "Левая граница [c]$ledge[n] ($state($ledge)): слева старая дуга [b]${item}[n] над сайтом [b]$split_site[n], справа новая дуга [c]${carc}[n] над сайтом [c]$site[n]"
         set state($rarc) [dict create site $split_site left $carc parent $redge path right] ;# правый кусочек — "копия" левого
+        # полуребро, соответствующее правой границе, смотрит в противоположную сторону вдоль того же направления — другой знак edir
         set state($redge) [dict create breakpoint [list $site $split_site] left $ledge right $rarc parent $parent path $subpath estart [list $x $py] edir [list [expr {-$vx}]  [expr {-$vy}]]]
         puts "Правая граница [c]$redge[n] ($state($redge)): слева поддерево [m]${ledge}[n] и сайт [c]$site[n], справа копия старой дуги [c]${rarc}[n] над сайтом [b]$split_site[n]"
         # Обновляем соседей
@@ -265,60 +263,63 @@ proc check_add_circle { state_name carc y } {
     # Координаты полурёбер
     lassign [dict get $state($lbp) estart] xsl ysl ;# "left edge start x, ... y
     lassign [dict get $state($lbp) edir] xdl ydl ;# left edge dir x, ... y
-    if {$xdl=="vertical"} {
-        set xdl 0.0
-        set ydl 1.0
-    }
     lassign [dict get $state($rbp) estart] xsr ysr
     lassign [dict get $state($rbp) edir] xdr ydr
-    if {$xdr=="vertical"} {
-        set xdr 0.0
-        set ydr 1.0
-    }
     puts [format "    Координаты полурёбер: [m]$lbp[n]: (%g, %g) → (%g, %g); [m]$rbp[n]: (%g, %g) → (%g, %g)" $xsl $ysl $xdl $ydl $xsr $ysr $xdr $ydr]
-    puts "    [Y]система:[n]"
-    puts [format "    [y]x[n] = %g + [y]tl[n] %g" $xsl $xdl]
-    puts [format "    [y]y[n] = %g + [y]tl[n] %g" $ysl $ydl]
-    puts [format "    [y]x[n] = %g + [y]tr[n] %g" $xsr $xdr]
-    puts [format "    [y]y[n] = %g + [y]tr[n] %g" $ysr $ydr]
-    set D [expr {$ydl*$xdr-$xdl*$ydr}]
-    if {$D==0} {
-        puts "    полурёбра [r]$lbp[n] и [r]$rbp[n] не пересекаются — параллельны"
-        return 0
+    if {$ydl==Inf} { ;# левое полуребро — бесконечное вертикальное
+        if {(($xsl-$xsr)>0) || ($xdr>=0)} {
+            puts "    левое полуребро [r]$lbp[n] вертикальное бесконечное, а правое [r]$rbp[n] с ним не пересекается — параллельно или направлено в другую сторону"
+            return 0
+        }
+        set cx $xsl
+        set cy [expr {$ysr+($xsl-$xsr)*$ydr/$xdr}]
+        puts "    полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются"
+    } else { ;# левое полуребро не бесконечное вертикальное
+        if {$ydr==Inf} { ;# правое ребро бесконечное вертикальное
+            if {(($xsl-$xsr)>0) || ($xdl<=0)} { ;# ($xsr-$xsl)*$xdl<=0
+                puts "    правое полуребро [r]$rbp[n] вертикальное бесконечное, а левое [r]$lbp[n] направлено в другую сторону"
+                return 0
+            }
+            set cx $xsr
+            set cy [expr {$ysl+($xsr-$xsl)*$ydl/$xdl}]
+            puts "    полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются"
+        } else {
+            puts [format "    [y]x[n] = %g + [y]tl[n] %g = %g + [y]tr[n] %g" $xsl $xdl $xsr $xdr]
+            puts [format "    [y]y[n] = %g + [y]tl[n] %g = %g + [y]tr[n] %g" $ysl $ydl $ysr $ydr]
+            set D [expr {$ydl*$xdr-$xdl*$ydr}]
+            if {$D==0} {
+                puts "    полурёбра [r]$lbp[n] и [r]$rbp[n] не пересекаются — параллельны"
+                return 0
+            }
+            set tl [expr {(($ysr-$ysl)*$xdr-($xsr-$xsl)*$ydr)/$D}]
+            set tr [expr {(($ysr-$ysl)*$xdl-($xsr-$xsl)*$ydl)/$D}]
+            # Если параметры tl и tr оба неотрицательны, границы движутся к пересечению
+            if {$tl<0} {
+                puts [format "    [r]tl[n] = [m]%g[n] < 0 - полуребро [r]$lbp[n] растёт в направлении, противоположном точке пересечения прямых" $tl]
+                return 0
+            }
+            if {$tr<0} {
+                puts [format "    [r]tr[n] = [m]%g[n] < 0 - полуребро [r]$rbp[n] растёт в направлении, противоположном точке пересечения прямых" $tr]
+                return 0
+            }
+            set cx [expr {$xsl+$tl*$xdl}]
+            set cy [expr {$ysl+$tl*$ydl}]
+            puts [format "    [c]tl[n] = [m]%g[n] ≥ 0, [c]tr[n] = [m]%g[n] ≥ 0 — полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются" $tl $tr]
+        }
     }
-    set tl [expr {(($ysr-$ysl)*$xdr-($xsr-$xsl)*$ydr)/$D}]
-    set tr [expr {(($ysr-$ysl)*$xdl-($xsr-$xsl)*$ydl)/$D}]
 
-    # Если параметры tl и tr оба неотрицательны, границы движутся к пересечению
-    if {$tl<0} {
-        puts [format "    [r]tl[n] = [m]%g[n] < 0 - полуребро [r]$lbp[n] растёт в направлении, противоположном точке пересечения прямых" $tl]
-        return 0
-    }
-    if {$tr<0} {
-        puts [format "    [r]tr[n] = [m]%g[n] < 0 - полуребро [r]$rbp[n] растёт в направлении, противоположном точке пересечения прямых" $tr]
-        return 0
-    }
-
-    set cx [expr {$xsl+$tl*$xdl}]
-    set cy [expr {$ysl+$tl*$ydl}]
     set r [expr {hypot($xc-$cx, $yc-$cy)}]
-    puts [format "    [c]tl[n] = [m]%g[n] ≥ 0, [c]tr[n] = [m]%g[n] ≥ 0 — полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются" $tl $tr]
     puts [format "    в точке [c]x[n] = [m]%g[n], [c]y[n] = [m]%g[n] на расстоянии [c]r[n] = [m]%g[n] от узлов [m]$lsite[n], [m]$csite[n], [m]$rsite[n]" $cx $cy $r]
-    
-    # TODO не это ли подходящее место для замены vertical на {0 -1}?
-#    if {[dict get $state($lbp) edir]=="vertical"} {
-#        dict set state($lbp) edir [list 0.0 -1.0]
-#    }
-#    if {[dict get $state($rbp) edir]=="vertical"} {
-#        dict set state($rbp) edir [list 0.0 -1.0]
-#    }
 
     set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($csite)] {*}[dict get $state($rsite)]]
     if {$c==0} {
         puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
         return 0
     }
-    lassign $c cx cy r
+    lassign $c cx1 cy1 r1
+    if {$cx1!=$cx||$cy1!=$cy||$r!=$r1} {
+        puts "    [R]Пересечение ($cx, $cy, $r) не совпадает с окружностью [y]($cx1, $cy1, $r1)[n][R]![n]"
+    }
 
     # TODO костыль, чтобы избежать повторного добавления той же самой окружности — ищем окружность с такими же координатами
     foreach {k v} [array get state c*] {
@@ -328,7 +329,6 @@ proc check_add_circle { state_name carc y } {
             return 0
         }
     }
-    
 
     puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
     # Если нижняя точка окружности выше текущего события, вообще не паримся
@@ -422,12 +422,18 @@ proc handle_circle_event { state_name circle } {
     dict set state($parparent) $parsubpath $sibling 
     dict_mset state($sibling) parent $parparent path $parsubpath
     # 1.3 обновляем точки разрыва
+    # и нужно указать новое направление полуребра!
     # находим общего предка новых "соседних" дуг и устанавливаем их сайты в качестве точки разрыва этого предка
     set nca [find_nearest_common_ancestor state $larc $rarc]
     set lsite [dict get $state($larc) site]
     set rsite [dict get $state($rarc) site]
-    puts "    Ближайший общий предок $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
-    dict set state($nca) breakpoint [list $lsite $rsite]
+    lassign $state($lsite) xl yl
+    lassign $state($rsite) xr yr
+    set vx [expr {$yl-$yr}]
+    set vy [expr {$xr-$xl}]
+    dict_mset state($nca) breakpoint [list $lsite $rsite] estart [list $x $y] edir [list $vx $vy]
+    
+    puts "    Обновленная точка разрыва между $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
 
     # 1.4 Удаляем все события окружность, которые включали удалённую дугу
     check_invalidate_circle state $larc
@@ -546,7 +552,7 @@ proc compute_voronoi_diagram { points } {
 }
 
 set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
-#set points $points3
+#set points $points2
 
 set V [compute_voronoi_diagram $points]
 puts "[C]Диаграмма Вороного:[n] $V"
@@ -565,9 +571,10 @@ set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #
 set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
 set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge}}
 set D_style {-fill #000 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
-#set scale 1
+set scale 1
 #set scale 4
 set scale 30
+#set scale 60
 
 dict for {k v} $V {
     switch -glob $k {
