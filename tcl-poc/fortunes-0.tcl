@@ -218,13 +218,16 @@ proc check_add_circle { state_name carc y } {
     lassign [dict get $state($rbp) estart] xsr ysr
     lassign [dict get $state($rbp) edir] xdr ydr
     puts [format "    Координаты полурёбер: [m]$lbp[n]: (%g, %g) → (%g, %g); [m]$rbp[n]: (%g, %g) → (%g, %g)" $xsl $ysl $xdl $ydl $xsr $ysr $xdr $ydr]
+    
+    # TODO: в этой логике где-то всё равно не всё в порядке :(
     if {$ydl==Inf} { ;# левое полуребро — бесконечное вертикальное
         if {(($xsl-$xsr)>0) || ($xdr>=0)} {
             puts "    левое полуребро [r]$lbp[n] вертикальное бесконечное, а правое [r]$rbp[n] с ним не пересекается — параллельно или направлено в другую сторону"
             return 0
         }
-        set cx $xsl
-        set cy [expr {$ysr+($xsl-$xsr)*$ydr/$xdr}]
+# TODO Либо происходит страшная потеря точности, либо срабатывает ошибка где-то в логике
+#        set cx $xsl
+#        set cy [expr {$ysr+($xsl-$xsr)*$ydr/$xdr}]
         puts "    полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются"
     } else { ;# левое полуребро не бесконечное вертикальное
         if {$ydr==Inf} { ;# правое ребро бесконечное вертикальное
@@ -232,8 +235,9 @@ proc check_add_circle { state_name carc y } {
                 puts "    правое полуребро [r]$rbp[n] вертикальное бесконечное, а левое [r]$lbp[n] направлено в другую сторону"
                 return 0
             }
-            set cx $xsr
-            set cy [expr {$ysl+($xsr-$xsl)*$ydl/$xdl}]
+# TODO Либо происходит страшная потеря точности, либо срабатывает ошибка где-то в логике
+#            set cx $xsr
+#            set cy [expr {$ysl+($xsr-$xsl)*$ydl/$xdl}]
             puts "    полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются"
         } else {
             puts [format "    [y]x[n] = %g + [y]tl[n] %g = %g + [y]tr[n] %g" $xsl $xdl $xsr $xdr]
@@ -254,30 +258,28 @@ proc check_add_circle { state_name carc y } {
                 puts [format "    [r]tr[n] = [m]%g[n] < 0 - полуребро [r]$rbp[n] растёт в направлении, противоположном точке пересечения прямых" $tr]
                 return 0
             }
-            set cx [expr {$xsl+$tl*$xdl}]
-            set cy [expr {$ysl+$tl*$ydl}]
+# TODO Либо происходит страшная потеря точности, либо срабатывает ошибка где-то в логике
+#            set cx [expr {$xsl+$tl*$xdl}]
+#            set cy [expr {$ysl+$tl*$ydl}]
             puts [format "    [c]tl[n] = [m]%g[n] ≥ 0, [c]tr[n] = [m]%g[n] ≥ 0 — полурёбра [g]$lbp[n] и [g]$rbp[n] пересекаются" $tl $tr]
         }
     }
 
-    set r [expr {hypot($xc-$cx, $yc-$cy)}]
+# TODO Либо происходит страшная потеря точности, либо срабатывает ошибка где-то в логике
+#    set r [expr {hypot($xc-$cx, $yc-$cy)}]
+#    if {(abs(hypot($xr-$cx, $yr-$cy)/$r-1)>1e-6)||(abs(hypot($xl-$cx, $yl-$cy)/$r-1)>1e-6)} {
+#        puts "    [R]Хьюстон, у нас проблемы: [expr {hypot($xc-$cx, $yc-$cy)}] [expr {hypot($xr-$cx, $yr-$cy)}] [expr {hypot($xl-$cx, $yl-$cy)}][n]"
+#        lassign [find_circle $xr $yr $xc $yc $xl $yl] cx cy r
+#        puts "    [Y]$r[n] ($cx, $cy)"
+#    }
+# Поэтому, пока что вычисляем так. Вроде бы лишние вычисления, но вот же.
+    lassign [find_circle $xr $yr $xc $yc $xl $yl] cx cy r
+    
     puts [format "    в точке [c]x[n] = [m]%g[n], [c]y[n] = [m]%g[n] на расстоянии [c]r[n] = [m]%g[n] от узлов [m]$lsite[n], [m]$csite[n], [m]$rsite[n]" $cx $cy $r]
 
-#    # TODO эти вычисления больше не нужны (и вообще find_circle не нужно), а проверка ниже может выстрелить из-за вычислительных погрешностей
-#    set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($csite)] {*}[dict get $state($rsite)]]
-#    if {$c==0} {
-#        puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
-#        return 0
-#    }
-#    lassign $c cx1 cy1 r1
-#    if {$cx1!=$cx||$cy1!=$cy||$r!=$r1} {
-#        puts "    [R]Пересечение ($cx, $cy, $r) не совпадает с окружностью [y]($cx1, $cy1, $r1)[n][R]![n]"
-#    }
-
-    puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
-    # Если нижняя точка окружности выше текущего события, это странно
+    # TODO Если нижняя точка окружности выше текущего события, это странно, возможно ли вообще такое?
     if {$cy+$r<$y} {
-        puts "    [R]нижняя точка окружности [expr {$cy+$r}] лежит выше текущего события $y[n]"
+        puts [format "    [R]нижняя точка окружности $circle %g лежит выше текущего события %g[n]" [expr {$cy+$r}] $y]
         return 0
     }
 
@@ -286,7 +288,7 @@ proc check_add_circle { state_name carc y } {
     events add [expr {$cy+$r}] "circle" $circle
     
     dict set state($carc) circle $circle
-    puts "    дуга [y]$carc[n] ($state($carc)) может слопнуться в событии \[[expr {$cy+$r}]\] [c]$circle[n] ($state($circle))"
+    puts [format "    дуга [y]$carc[n] ([y]$csite[n]) может слопнуться в событии [c]$circle[n] (%g, %g; %g) с приоритетом [m]%g[n]" $cx $cy $r [expr {$cy+$r}]]
 
     return $circle
 }
@@ -418,12 +420,10 @@ proc print_beachline { state_name } {
     set s ""
     while {[dict exists $state($item) right]} {
         set site [dict get $state($item) site]
-#        set s "$s[m]$item[n] ([b]$site[n]: [dict get $state($site)]) - "
         set s "$s[m]$item[n] ([b]$site[n]) - "
         set item [dict get $state($item) right]
     }
     set site [dict get $state($item) site]
-#    set s "$s[m]$item[n] ([b]$site[n]: [dict get $state($site)])"
     set s "$s[m]$item[n] ([b]$site[n])"
     
     puts "Береговая линия: $s"
@@ -501,8 +501,8 @@ proc compute_voronoi_diagram { points } {
     return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get full_edges]]
 }
 
-#set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
-set points $points2
+set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
+#set points $points2
 
 #set points {{5 0} {0 5} {10 5} {5 10}}
 #set points {{1 2} {8 1} {9 8} {2 9}}
@@ -525,7 +525,7 @@ set V_r 2
 set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #F0F -activewidth 2 -tags {vertex clicktoinfo}}
 set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
 set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge}}
-set D_style {-fill #000 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
+set D_style {-fill #FF0 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
 #set scale 1
 #set scale 4
 #set scale 30
