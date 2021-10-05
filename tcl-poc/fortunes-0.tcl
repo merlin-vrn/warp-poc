@@ -18,32 +18,6 @@ set height 480
 # Загружаем тестовый набор точек
 source "points.tcl"
 
-# Поиск окружности (центр и радиус), проходящей через все три точки
-proc find_circle { x1 y1 x2 y2 x3 y3 } {
-#    puts "    [R]$x1 $y1 $x2 $y2 $x3 $y3[n]"
-    set D [expr {$x1*($y2-$y3)+$x2*($y3-$y1)+$x3*($y1-$y2)}]
-    #     | x₁  y₁  1 |           | x₁²+y₁²  y₁  1 |            | x₁²+y₁²  x₁  1 |         | x₁²+y₁²  x₁  y₁ |
-    # D = | x₂  y₂  1 |    Dx = ½ | x₂²+y₂²  y₂  1 |     Dy = ½ | x₂²+y₂²  x₂  1 |    Dr = | x₂²+y₂²  x₂  y₂ |
-    #     | x₃  y₃  1 |           | x₃²+y₃²  y₃  1 |            | x₃²+y₃²  x₃  1 |         | x₃²+y₃²  x₃  y₃ |
-    if {$D==0} {
-        # точки принадлежат одной прямой
-        return 0
-    }
-    set _D [expr {1.0/$D}]
-    set r1 [expr {$x1*$x1+$y1*$y1}]
-    set r2 [expr {$x2*$x2+$y2*$y2}]
-    set r3 [expr {$x3*$x3+$y3*$y3}]
-#    puts "    [G]D=$D, 1/D=$_D, x₁²+y₁²=$r1, x₂²+y₂²=$r2, x₃²+y₃²=$r3[n]"
-    set Dx [expr {($r1*($y2-$y3)+$r2*($y3-$y1)+$r3*($y1-$y2))/2}]
-    set Dy [expr {($r1*($x2-$x3)+$r2*($x3-$x1)+$r3*($x1-$x2))/2}]
-    set Dr [expr {$r1*($x2*$y3-$x3*$y2)+$r2*($x3*$y1-$x1*$y3)+$r3*($x1*$y2-$x2*$y1)}]
-#    puts "    [G]Dx=$Dx, Dy=$Dy, Dr=$Dr[n]"
-    set x [expr {$Dx*$_D}]
-    set y [expr {-$Dy*$_D}]
-    set r [expr {sqrt($x*$x+$y*$y+$Dr*$_D)}]
-    return [list $x $y $r]
-}
-
 # если к дуге arc привязано событие окружность, то удаляем его и помечаем событие, как невалидное
 proc check_invalidate_circle { state_name arc } {
     upvar 1 $state_name state
@@ -57,38 +31,27 @@ proc check_invalidate_circle { state_name arc } {
     dict unset state($arc) circle
 }
 
-
-
 # находит дугу, находящуюся над точкой x, когда заметающая линия находится в положении y
 proc find_arc_above { state_name x y } {
     upvar 1 $state_name state
 
     set item $state(T) ;# начиная с дерева
-    while {![dict exists $state($item) site]} { ;# у дуги всегда есть сайт, её порождающий, а у границы — никогда нет такого свойства
-        lassign [dict get $state($item) breakpoint] lsite rsite ;# это ссылки соответственно на дугу "слева" и "справа" от границы, и нам нужно узнать, какая из них наша
+    while {![dict exists $state($item) site]} { ;# у дуги всегда есть свойство — порождающий сайт, а у точки излома нет такого свойства
+        lassign [dict get $state($item) breakpoint] lsite rsite ;# это ссылки соответственно на дугу "слева" и "справа" от точки излома
         lassign [dict get $state($lsite)] xl yl
         lassign [dict get $state($rsite)] xr yr
-        puts "    [y]$item[n] => $state($item) - граница между дуг сайта [y]$lsite[n] ([fn $xl], [fn $yl]) и сайта [y]$rsite[n] ([fn $xr], [fn $yr])"
+        puts [format "    [y]$item[n] => $state($item) - точка излома между дуг сайта [y]$lsite[n] (%g, %g) и сайта [y]$rsite[n] (%g, %g)" $xl $yl $xr $yr]
         if {$yr!=$yl} {
             # в уравнении два корня, если поменять порядок точек - корни меняются местами. Здесь нужен со знаком "-" перед sqrt (TODO: почему именно этот)
             set xlr [expr {($xr*($y-$yl)-$xl*($y-$yr)-hypot($xl-$xr,$yl-$yr)*sqrt(($y-$yl)*($y-$yr)))/($yr-$yl)}] ;# точка пересечения парабол
         } else {
-            set xlr [expr {($xl+$xr)/2}] ;# если они находятся на одной высоте, это "вертикальное" ребро
+            set xlr [expr {($xl+$xr)/2}] ;# если они находятся на одной высоте, это "вертикальное бесконечное" ребро
         }
         set subpath [expr {($x<$xlr)?"left":"right"}]
         set item [dict get $state($item) $subpath]
-        puts "    граница: [m][fn $xlr][n], сайт: [c][fn $x][n] — переход [y]$subpath[n] к [m]$item[n]"
+        puts [format "    точка излома: [m]%g[n], сайт: [c]%g[n] — переход [y]$subpath[n] к [m]$item[n]" $xlr $x]
     }
     return $item
-}
-
-# обновляет словарь первого уровня значениями из списка args в формате k1 v1 k2 v2 ...
-proc dict_mset { dict_name args } {
-    upvar 1 $dict_name mydict
-    
-    foreach {k v} $args {
-        dict set mydict $k $v
-    }
 }
 
 # обрабатывает событие "сайт", расположенный в точке x y
@@ -96,136 +59,117 @@ proc handle_site_event { state_name site } {
     upvar 1 $state_name state
     
     lassign $state($site) x y
-#    puts "Сайт: [c]$site[n] ([fn $x], [fn $y])"
     puts [format "Сайт: [c]%s[n] (%g, %g)" $site $x $y] 
     
     # 1. Если дерево T отсутствует, инициализируем его объектом "дуга", связанным с этим сайтом site. И выходим
     if {![info exists state(T)]} {
         set arc [new_arc]
         set state($arc) [dict create site $site parent T path {}]
-        puts "Новая дуга: [c]$arc[n] (сайт $site)"
+        puts "Новая дуга: [c]$arc[n] ($site)"
         set state(T) $arc
         puts "    инициализируем дерево: T => $state(T)"
         return
     }
 
-    # 2. Ищем в T дугу, находящуюся непосредственно над site. xlr - абсцисса точки 
-    set item [find_arc_above state $x $y]
+    # 2. Ищем в T дугу, находящуюся непосредственно над site
+    set split_arc [find_arc_above state $x $y]
     
     # Сайт, порождающий эту дугу
-    set split_site [dict get $state($item) site]
+    set split_site [dict get $state($split_arc) site]
     lassign $state($split_site) sx sy
 
     # Положение дуги в дереве
-    set parent [dict get $state($item) parent]
-    set subpath [dict get $state($item) path]
-    puts "    [b]$item[n] => $state($item) - дуга над сайтом [b]$split_site[n] ($state($split_site)); она является потомком [y]$parent[n] в положении \"[y]$subpath[n]\""
+    set parent [dict get $state($split_arc) parent]
+    set subpath [dict get $state($split_arc) path]
+    puts "    [b]$split_arc[n] ($state($split_arc)) - дуга над сайтом [b]$split_site[n] ($state($split_site)); она является потомком [y]$parent[n] в положении \"[y]$subpath[n]\""
 
     # Если к этой дуге было привязано событие circle — помечаем его как "ложную тревогу"
-    check_invalidate_circle state $item
+    check_invalidate_circle state $split_arc
 
     # 3. Заменяем найденный объект поддеревом из двух или трёх дуг
-    set arcs_to_check {} ;# сюда положим дуги, которые могут вызвать событие окружность (проверим в п. 5)
+    set arcs_to_check {} ;# накопитель для дуг, которые мы будем проверять на "схлопывание" в событии окружность (п. 5)
 
     # Собираем новое поддерево взамен убираемого листика
     if {$y==$sy} { ;# если новый сайт и разделяемый лежат на одной высоте, то у нас получится две дуги, а не три
-        # Это может произойти только в единственном случае: мы проходим второй по счёту сайт,
-        # и его ордината совпадает. В любом другом случае над сайтом, совпадающем с другим по высоте, 
-        # всегда найдётся для разбиения дуга, порождённая каким-то из сайтов с ординатой меньше.
+        # Это может произойти только в самом начале, пока мы проходим по сайтам с самой малой координатой y и она у них всех совпадает
+        # В любом другом случае над сайтом, совпадающем с другим по высоте, всегда найдётся для разбиения дуга, порождённая каким-то из сайтов с ординатой меньше.
         puts [format "    сайты лежат на одной высоте; по горизонтали: новый [y]%g[n], старый [y]%g[n]" $x $sx]
         set narc [new_arc]
-        set redge [new_edge]
-        set state($narc) [dict create site $site parent $redge]
-        set state($redge) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] -Inf] edir [list 0 Inf]]
-        # TODO: Здесь должно быть две половинки ребра, но точка разрыва одна.
-        # При проверке, сближаются ли точки разрыва, это значение действует в направлении директрисы. Как только данная граница
-        # с чем-нибудь соединится, т.е. схлопнется непосредственно прилегающая к ней левая или правая дуга, мы как бы 
-        # "израсходуем" полуребро "в направлении директрисы", и заменим это специальное значение на вектор "вертикально от директрисы", заодно узнаем и начало вектора
-        dict set state($item) parent $redge
+        set rbp [new_breakpoint]
+        set state($narc) [dict create site $site parent $rbp]
+        set state($rbp) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] -Inf] edir [list 0 Inf]]
+        # TODO: Здесь должно быть два полуребра, но точка излома одна.
+        dict set state($split_arc) parent $rbp
         if {$x>[lindex $state($split_site) 0]} { ;# Новая дуга справа
-            if {[dict exists $state($item) right]} {
-                # Если у старой дуги справа был сосед, 
-                set neigh [dict get $state($item) right]
-                # теперь это сосед справа для новой дуги,
-                dict set state($narc) right $neigh
-                # а его сосед слева, соответственно, новая дуга
-                dict set state($neigh) left $narc
+            if {[dict exists $state($split_arc) right]} { ;# Если у старой дуги был сосед справа, 
+                set neigh [dict get $state($split_arc) right] 
+                dict set state($narc) right $neigh ;# теперь это сосед справа для новой дуги,
+                dict set state($neigh) left $narc ;# а его сосед слева, соответственно, новая дуга
             }
-            # Сосед item слева, если он есть — остаётся как был
-            # Соседство: narc - сосед item справа, item - сосед narc слева 
-            dict_mset state($item) right $narc path left
-            dict_mset state($narc) left $item path right
-            dict_mset state($redge) breakpoint [list $split_site $site] left $item right $narc
-            set _info "слева старая дуга [b]$item[n] над сайтом [b]$split_site[n], справа новая дуга [c]$narc[n] над сайтом [c]$site[n]"
+            # Соседство: narc - сосед split_arc справа, split_arc - сосед narc слева 
+            dict_mset state($split_arc) right $narc path left
+            dict_mset state($narc) left $split_arc path right
+            dict_mset state($rbp) breakpoint [list $split_site $site] left $split_arc right $narc
+            set _info "слева старая дуга [b]$split_arc[n] ([b]$split_site[n]), справа новая дуга [c]$narc[n] ([c]$site[n])"
         } else { ;# Новая дуга слева
-            if {[dict exists $state($item) left]} {
-                # Если у старой дуги слева был сосед, 
-                set neigh [dict get $state($item) left]
-                # теперь это сосед слева для новой дуги,
-                dict set state($narc) left $neigh
-                # а его сосед справа, соответственно, новая дуга
-                dict set state($neigh) right $narc
+            if {[dict exists $state($split_arc) left]} { ;# Если у старой дуги слева был сосед, 
+                set neigh [dict get $state($split_arc) left]
+                dict set state($narc) left $neigh ;# теперь это сосед слева для новой дуги,
+                dict set state($neigh) right $narc ;# а его сосед справа, соответственно, новая дуга
             }
-            # Сосед item справа, если он есть — остаётся как был
-            # Соседство: narc - сосед item слева, item - сосед narc справа 
-            dict_mset state($item) left $narc path right
-            dict_mset state($narc) right $item path left
-            dict_mset state($redge) breakpoint [list $site $split_site] left $narc right $item
-            set _info "слева новая дуга [c]$narc[n] над сайтом [c]$site[n], справа старая дуга [b]$item[n] над сайтом [b]$split_site[n]"
+            # Соседство: narc - сосед split_arc слева, split_arc - сосед narc справа 
+            dict_mset state($split_arc) left $narc path right
+            dict_mset state($narc) right $split_arc path left
+            dict_mset state($rbp) breakpoint [list $site $split_site] left $narc right $split_arc
+            set _info "слева новая дуга [c]$narc[n] ([c]$site[n]), справа старая дуга [b]$split_arc[n] ([b]$split_site[n])"
         }
-        puts "Граница [c]$redge[n] ($state($redge)): $_info"
-        lappend arcs_to_check $item
+        puts "Точка излома [c]$rbp[n] ($state($rbp)): $_info"
+        lappend arcs_to_check $split_arc
         lappend arcs_to_check $narc
     } else {
-        # Строим структуру из трёх дуг, боковые — кусочки старой дуги, цетральная — новая дуга
-        # левый кусочек — оставляем идентификатор от старой дуги item
+        # Строим структуру из трёх дуг, боковые — кусочки старой дуги, цетральная — новая дуга, левый кусочек — оставляем структуру от разбиваемой дуги split_arc
         set carc [new_arc]
         set rarc [new_arc]
-        set ledge [new_edge]
-        set redge [new_edge]
+        set lbp [new_breakpoint]
+        set rbp [new_breakpoint]
 
+        # Координаты нового полуребра: точка начала x, py, вектор направления vx, vy (левое), -vx, -vy (правое)
         set vx [expr {$sy-$y}]
         set vy [expr {$x-$sx}]
         set py [expr {$vy*$vy/(2.0*$vx)+($sy+$y)/2.0}] ;# Точка на параболе над новым сайтом: y=(x-sx)²/(2(sy-y))+(sy+y)/2
-        set state($carc) [dict create site $site left $item right $rarc parent $ledge path right] ;# средний кусочек — дуга от нового сайта
-        puts [format "    новая дуга [c]$carc[n] разбивает [b]$item[n] на две части в точке %g, %g" $x $py]
-        set state($ledge) [dict create breakpoint [list $split_site $site] left $item right $carc  parent $redge path left estart [list $x $py] edir [list $vx $vy]]
-        puts "Левая граница [c]$ledge[n] ($state($ledge)): слева старая дуга [b]${item}[n] над сайтом [b]$split_site[n], справа новая дуга [c]${carc}[n] над сайтом [c]$site[n]"
-        set state($rarc) [dict create site $split_site left $carc parent $redge path right] ;# правый кусочек — "копия" левого
-        # полуребро, соответствующее правой границе, смотрит в противоположную сторону вдоль того же направления — другой знак edir
-        set state($redge) [dict create breakpoint [list $site $split_site] left $ledge right $rarc parent $parent path $subpath estart [list $x $py] edir [list [expr {-$vx}]  [expr {-$vy}]]]
-        puts "Правая граница [c]$redge[n] ($state($redge)): слева поддерево [m]${ledge}[n] и сайт [c]$site[n], справа копия старой дуги [c]${rarc}[n] над сайтом [b]$split_site[n]"
-        # Обновляем соседей
-        if {[dict exists $state($item) right]} {
-            # если у старой дуги был сосед справа,
-            set neigh [dict get $state($item) right]
-            # это теперь сосед справа её клона,
-            dict set state($rarc) right $neigh
-            # а его сосед слева, соответственно, теперь клон
-            dict set state($neigh) left $rarc
-        }
-        # Левый сосед item, если есть, остаётся без изменений
-        dict_mset state($item) right $carc parent $ledge path left
 
-        # средняя дуга (от нового сайта) пока никак не может "схлопнуться" — она сейчас растёт, по бокам у неё кусочки одной и той же параболы
-        lappend arcs_to_check $item
+        set state($carc) [dict create site $site left $split_arc right $rarc parent $lbp path right] ;# средний кусочек — дуга от нового сайта
+        puts [format "    новая дуга [c]$carc[n] разбивает [b]$split_arc[n] на две части в точке %g, %g" $x $py]
+        set state($lbp) [dict create breakpoint [list $split_site $site] left $split_arc right $carc  parent $rbp path left estart [list $x $py] edir [list $vx $vy]]
+        puts "Леавя точка излома [c]$lbp[n] ($state($lbp)): слева старая дуга [b]$split_arc[n] ([b]$split_site[n]), справа новая дуга [c]$carc[n] ([c]$site[n])"
+        set state($rarc) [dict create site $split_site left $carc parent $rbp path right] ;# правый кусочек — "копия" левого
+        set state($rbp) [dict create breakpoint [list $site $split_site] left $lbp right $rarc parent $parent path $subpath estart [list $x $py] edir [list [expr {-$vx}]  [expr {-$vy}]]]
+        puts "Правая точка излома [c]$rbp[n] ($state($rbp)): слева поддерево [m]$lbp[n] (сайт [c]$site[n]), справа копия старой дуги [c]$rarc[n] ([b]$split_site[n])"
+        # Обновляем соседей
+        if {[dict exists $state($split_arc) right]} { ;# если у разбиваемой дуги был сосед справа,
+            set neigh [dict get $state($split_arc) right]
+            dict set state($rarc) right $neigh ;# это теперь сосед справа её клона,
+            dict set state($neigh) left $rarc ;# а его сосед слева, соответственно, теперь клон
+        }
+        dict_mset state($split_arc) right $carc parent $lbp path left ;# правый сосед разбиваемой дуги теперь новая дуга carc
+        lappend arcs_to_check $split_arc
         lappend arcs_to_check $rarc
     }
     
     # Вставляем его в новую позицию
     if {$subpath=={}} {
         puts "    вставляем в корень дерева [m]T[n]"
-        set state($parent) $redge
+        set state($parent) $rbp
     } else {
-        puts "    вставляем в [g]${parent}[n] ($state($parent)) в положение \"[m]$subpath[n]\""
-        dict set state($parent) $subpath $redge
+        puts "    вставляем в [g]$parent[n] ($state($parent)) в положение \"[m]$subpath[n]\""
+        dict set state($parent) $subpath $rbp
     }
     
     # TODO балансировка дерева
     
     # TODO 4. Создаём в выходной структуре полурёбра
     
-    # 5. Проверяем две вновь возникшие тройки соседних дуг на предмет схождения точек разрыва. Добавляем для таких событие "окружность"
+    # 5. Проверяем две вновь возникшие тройки соседних дуг на предмет слопывания средней. Добавляем для таких событие "окружность"
     foreach arc $arcs_to_check {
         check_add_circle state $arc $y
     }
@@ -246,7 +190,7 @@ proc check_add_circle { state_name carc y } {
     set larc [dict get $state($carc) left]
     set rarc [dict get $state($carc) right]
     
-    # Точки разрыва слева и справа
+    # Точки излома слева и справа
     set lbp [find_nearest_common_ancestor state $larc $carc]
     set rbp [find_nearest_common_ancestor state $carc $rarc]
     
@@ -261,8 +205,8 @@ proc check_add_circle { state_name carc y } {
     lassign $state($rsite) xr yr
     
     # Координаты полурёбер
-    lassign [dict get $state($lbp) estart] xsl ysl ;# "left edge start x, ... y
-    lassign [dict get $state($lbp) edir] xdl ydl ;# left edge dir x, ... y
+    lassign [dict get $state($lbp) estart] xsl ysl ;# Left half-edge Start x, y
+    lassign [dict get $state($lbp) edir] xdl ydl ;# Left half-edge Direction x, y
     lassign [dict get $state($rbp) estart] xsr ysr
     lassign [dict get $state($rbp) edir] xdr ydr
     puts [format "    Координаты полурёбер: [m]$lbp[n]: (%g, %g) → (%g, %g); [m]$rbp[n]: (%g, %g) → (%g, %g)" $xsl $ysl $xdl $ydl $xsr $ysr $xdr $ydr]
@@ -293,7 +237,7 @@ proc check_add_circle { state_name carc y } {
             }
             set tl [expr {(($ysr-$ysl)*$xdr-($xsr-$xsl)*$ydr)/$D}]
             set tr [expr {(($ysr-$ysl)*$xdl-($xsr-$xsl)*$ydl)/$D}]
-            # Если параметры tl и tr оба неотрицательны, границы движутся к пересечению
+            # Если параметры tl и tr оба неотрицательны, полурёбра движутся к пересечению
             if {$tl<0} {
                 puts [format "    [r]tl[n] = [m]%g[n] < 0 - полуребро [r]$lbp[n] растёт в направлении, противоположном точке пересечения прямых" $tl]
                 return 0
@@ -421,9 +365,9 @@ proc handle_circle_event { state_name circle } {
     # 1.2 удаляем из дерева
     dict set state($parparent) $parsubpath $sibling 
     dict_mset state($sibling) parent $parparent path $parsubpath
-    # 1.3 обновляем точки разрыва
+    # 1.3 обновляем точки излома
     # и нужно указать новое направление полуребра!
-    # находим общего предка новых "соседних" дуг и устанавливаем их сайты в качестве точки разрыва этого предка
+    # находим общего предка новых "соседних" дуг и устанавливаем их сайты в качестве точки излома этого предка
     set nca [find_nearest_common_ancestor state $larc $rarc]
     set lsite [dict get $state($larc) site]
     set rsite [dict get $state($rarc) site]
@@ -433,10 +377,9 @@ proc handle_circle_event { state_name circle } {
     set vy [expr {$xr-$xl}]
     dict_mset state($nca) breakpoint [list $lsite $rsite] estart [list $x $y] edir [list $vx $vy]
     
-    puts "    Обновленная точка разрыва между $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
+    puts "    Обновленная точка излома между [b]$larc[n] ($lsite) и [b]$rarc[n] ($rsite): [c]$nca[n] ($state($nca))"
 
     # 1.4 Удаляем все события окружность, которые включали удалённую дугу
-    
     check_invalidate_circle state $larc
     check_invalidate_circle state $rarc
     
@@ -468,8 +411,8 @@ proc print_beachline { state_name } {
     
     # поиск самой левой дуги
     set item $state(T)
+    # спускаемся по "точкам излома", пока не дойдём до "дуги"
     while {![dict exists $state($item) site]} {
-        ;# спускаемся по "разрывам", пока не дойдём до "дуги"
         set item [dict get $state($item) left]
     }
     # сборка "береговой линии"
@@ -495,8 +438,8 @@ proc compute_voronoi_diagram { points } {
     
     #
     nextid new_arc a
+    nextid new_breakpoint b
     nextid new_site s
-    nextid new_edge e
     nextid new_circle c
     
     #
@@ -516,7 +459,7 @@ proc compute_voronoi_diagram { points } {
     while {[events length]>0} { 
         # 3. Выбираем событие с наибольшей координатой y (приоритетом)
         set evt_data [lassign [events get] evt_prio evt_type]
-        puts "[G][fn $evt_prio]: [y]$evt_type[n][G] $evt_data[n]"
+        puts [format "[G]%g: [y]$evt_type[n][G] $evt_data[n]" $evt_prio]
         # 4. Если это событие "сайт", 5. Обрабатываем как сайт, иначе 6. Обрабатываем как окружность
         handle_${evt_type}_event state $evt_data
         
@@ -554,7 +497,6 @@ proc compute_voronoi_diagram { points } {
 
 #set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 set points {{0.0 0.0} {2.0 0.0} {4.0 0.0} {1.0 2.0} {3.0 2.0} {2.0 4.0} {3.0 6.0} {4.0 4.0} {5.0 2.0} {6.0 0.0}}
-#set points {{0.0 0.0} {2.0 0.0} {4.0 0.0} {1.0 2.0} {3.0 2.0} {6.0 0.0}}
 #set points $points2
 
 set V [compute_voronoi_diagram $points]
