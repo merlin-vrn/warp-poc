@@ -342,7 +342,7 @@ proc check_add_circle { state_name carc y } {
     set state($circle) [list $cx $cy $r $carc]
     events add [expr {$cy+$r}] "circle" $circle
     
-    dict set state($сarc) circle $circle
+    dict set state($carc) circle $circle
     puts "    дуга [y]$carc[n] ($state($carc)) может слопнуться в событии \[[expr {$cy+$r}]\] [c]$circle[n] ($state($circle))"
 
     return $circle
@@ -436,6 +436,7 @@ proc handle_circle_event { state_name circle } {
     puts "    Обновленная точка разрыва между $larc ($lsite) и $rarc ($rsite): [y]$nca[n] ($state($nca))"
 
     # 1.4 Удаляем все события окружность, которые включали удалённую дугу
+    
     check_invalidate_circle state $larc
     check_invalidate_circle state $rarc
     
@@ -551,7 +552,9 @@ proc compute_voronoi_diagram { points } {
     return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get full_edges]]
 }
 
-set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
+#set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
+set points {{0.0 0.0} {2.0 0.0} {4.0 0.0} {1.0 2.0} {3.0 2.0} {2.0 4.0} {3.0 6.0} {4.0 4.0} {5.0 2.0} {6.0 0.0}}
+#set points {{0.0 0.0} {2.0 0.0} {4.0 0.0} {1.0 2.0} {3.0 2.0} {6.0 0.0}}
 #set points $points2
 
 set V [compute_voronoi_diagram $points]
@@ -571,10 +574,10 @@ set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #
 set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
 set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge}}
 set D_style {-fill #000 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
-set scale 1
+#set scale 1
 #set scale 4
-set scale 30
-#set scale 60
+#set scale 30
+set scale 60
 
 dict for {k v} $V {
     switch -glob $k {
