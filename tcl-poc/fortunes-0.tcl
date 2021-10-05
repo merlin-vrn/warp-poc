@@ -90,6 +90,7 @@ proc handle_site_event { state_name site } {
     set arcs_to_check {} ;# накопитель для дуг, которые мы будем проверять на "схлопывание" в событии окружность (п. 5)
 
     # Собираем новое поддерево взамен убираемого листика
+    # TODO: поддерживать в дугах ссылки на точки излома не только в структуре дерева, но и в структуре "береговой линии"; это поможет избежать поисков общих предков
     if {$y==$sy} { ;# если новый сайт и разделяемый лежат на одной высоте, то у нас получится две дуги, а не три
         # Это может произойти только в самом начале, пока мы проходим по сайтам с самой малой координатой y и она у них всех совпадает
         # В любом другом случае над сайтом, совпадающем с другим по высоте, всегда найдётся для разбиения дуга, порождённая каким-то из сайтов с ординатой меньше.
@@ -127,16 +128,16 @@ proc handle_site_event { state_name site } {
         lappend arcs_to_check $split_arc
         lappend arcs_to_check $narc
     } else {
-        # Строим структуру из трёх дуг, боковые — кусочки старой дуги, цетральная — новая дуга, левый кусочек — оставляем структуру от разбиваемой дуги split_arc
+        # Строим структуру из трёх дуг: слева оставляем структуру от разбиваемой дуги split_arc, в середине новая дуга, справа клон разбиваемой дуги
         set carc [new_arc]
         set rarc [new_arc]
         set lbp [new_breakpoint]
         set rbp [new_breakpoint]
 
-        # Координаты нового полуребра: точка начала x, py, вектор направления vx, vy (левое), -vx, -vy (правое)
+        # Координаты новых полурёбер: точка начала x, py, вектор направления vx, vy (левое), -vx, -vy (правое)
         set vx [expr {$sy-$y}]
         set vy [expr {$x-$sx}]
-        set py [expr {$vy*$vy/(2.0*$vx)+($sy+$y)/2.0}] ;# Точка на параболе над новым сайтом: y=(x-sx)²/(2(sy-y))+(sy+y)/2
+        set py [expr {$vy*$vy/(2.0*$vx)+($sy+$y)/2.0}] ;# Точка на параболе над новым сайтом: py=(x-sx)²/(2(sy-y))+(sy+y)/2
 
         set state($carc) [dict create site $site left $split_arc right $rarc parent $lbp path right] ;# средний кусочек — дуга от нового сайта
         puts [format "    новая дуга [c]$carc[n] разбивает [b]$split_arc[n] на две части в точке %g, %g" $x $py]
@@ -176,7 +177,7 @@ proc handle_site_event { state_name site } {
     
 }
 
-# Проверяет тройку дуг с указанной дугой в середине на предмет схлопывания и добавляет событие "окружность"
+# Проверяет тройку дуг с указанной дугой в середине на предмет схлопывания и добавляет событие "окружность".
 proc check_add_circle { state_name carc y } {
     upvar 1 $state_name state
 
@@ -189,16 +190,23 @@ proc check_add_circle { state_name carc y } {
     # Дуги слева и справа
     set larc [dict get $state($carc) left]
     set rarc [dict get $state($carc) right]
-    
+
+    set lsite [dict get $state($larc) site]
+    set csite [dict get $state($carc) site]
+    set rsite [dict get $state($rarc) site]
+
+    set circle [new_circle $lsite $csite $rsite]
+    # проверяем, не было ли уже окружности через эти же сайты в другом порядке
+    if {[info exists state($circle)]} {
+        puts "    Окружность через сайты $rsite, $csite, $lsite мы уже обрабатывали"
+        return 0
+    }
+
     # Точки излома слева и справа
     set lbp [find_nearest_common_ancestor state $larc $carc]
     set rbp [find_nearest_common_ancestor state $carc $rarc]
     
     puts "Проверяем структуру [y]$larc[n]-[m]$lbp[n]-[y]$carc[n]-[m]$rbp[n]-[y]$rarc[n]"
-
-    set lsite [dict get $state($larc) site]
-    set csite [dict get $state($carc) site]
-    set rsite [dict get $state($rarc) site]
     
     lassign $state($lsite) xl yl
     lassign $state($csite) xc yc
@@ -255,34 +263,25 @@ proc check_add_circle { state_name carc y } {
     set r [expr {hypot($xc-$cx, $yc-$cy)}]
     puts [format "    в точке [c]x[n] = [m]%g[n], [c]y[n] = [m]%g[n] на расстоянии [c]r[n] = [m]%g[n] от узлов [m]$lsite[n], [m]$csite[n], [m]$rsite[n]" $cx $cy $r]
 
-    set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($csite)] {*}[dict get $state($rsite)]]
-    if {$c==0} {
-        puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
-        return 0
-    }
-    lassign $c cx1 cy1 r1
-    if {$cx1!=$cx||$cy1!=$cy||$r!=$r1} {
-        puts "    [R]Пересечение ($cx, $cy, $r) не совпадает с окружностью [y]($cx1, $cy1, $r1)[n][R]![n]"
-    }
-
-    # TODO костыль, чтобы избежать повторного добавления той же самой окружности — ищем окружность с такими же координатами
-    foreach {k v} [array get state c*] {
-        lassign $v _x _y _r _a
-        if {($cx==$_x)&&($cy==$_y)&&($r==$_r)} {
-            puts "    [R]($cx $cy; $r) Такую окружность мы уже обрабатывали — [y]$k ($_a)[n][R]![n]"
-            return 0
-        }
-    }
+#    # TODO эти вычисления больше не нужны (и вообще find_circle не нужно), а проверка ниже может выстрелить из-за вычислительных погрешностей
+#    set c [find_circle {*}[dict get $state($lsite)] {*}[dict get $state($csite)] {*}[dict get $state($rsite)]]
+#    if {$c==0} {
+#        puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]), не существует"
+#        return 0
+#    }
+#    lassign $c cx1 cy1 r1
+#    if {$cx1!=$cx||$cy1!=$cy||$r!=$r1} {
+#        puts "    [R]Пересечение ($cx, $cy, $r) не совпадает с окружностью [y]($cx1, $cy1, $r1)[n][R]![n]"
+#    }
 
     puts "    окружность, содержащая сайты [m]$lsite[n] ([dict get $state($lsite)]), [m]$csite[n] [dict get $state($csite)], [m]$rsite[n] ([dict get $state($rsite)]): ([y]$cx $cy $r[n])"
-    # Если нижняя точка окружности выше текущего события, вообще не паримся
+    # Если нижняя точка окружности выше текущего события, это странно
     if {$cy+$r<$y} {
-        puts "    нижняя точка окружности [expr {$cy+$r}] лежит выше текущего события $y"
+        puts "    [R]нижняя точка окружности [expr {$cy+$r}] лежит выше текущего события $y[n]"
         return 0
     }
 
     # Приоритетом события "окружность" будет её нижняя точка, а остальную информацию добавим на всякий случай
-    set circle [new_circle]
     set state($circle) [list $cx $cy $r $carc]
     events add [expr {$cy+$r}] "circle" $circle
     
@@ -430,6 +429,14 @@ proc print_beachline { state_name } {
     puts "Береговая линия: $s"
 }
 
+proc new_circle {args} {
+    set c "c"
+    foreach s [lsort -dictionary $args] {
+        set c "${c}_[string range $s 1 end]" ;# отрезаем префикс "s" и строим идентификатор вида c_A_B_C, где A,B,C-номера сайтов
+    }
+    return $c
+}
+
 # Рассчитывает диаграмму Вороного для набора точек points
 proc compute_voronoi_diagram { points } {
     # стр. 157
@@ -440,7 +447,6 @@ proc compute_voronoi_diagram { points } {
     nextid new_arc a
     nextid new_breakpoint b
     nextid new_site s
-    nextid new_circle c
     
     #
     nextid new_vertex v
@@ -496,8 +502,12 @@ proc compute_voronoi_diagram { points } {
 }
 
 #set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
-set points {{0.0 0.0} {2.0 0.0} {4.0 0.0} {1.0 2.0} {3.0 2.0} {2.0 4.0} {3.0 6.0} {4.0 4.0} {5.0 2.0} {6.0 0.0}}
-#set points $points2
+set points $points2
+
+#set points {{5 0} {0 5} {10 5} {5 10}}
+#set points {{1 2} {8 1} {9 8} {2 9}}
+#set points {{9 2} {1 8} {2 1} {8 9}}
+#set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
 
 set V [compute_voronoi_diagram $points]
 puts "[C]Диаграмма Вороного:[n] $V"
