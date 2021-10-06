@@ -64,7 +64,7 @@ for {set i 0} {$i<160} {incr i 40} {
     lappend points3 [list $i 0]
     lappend points3 [list $i 119]
 }
-for {set j 0} {$j<120} {incr j 40} {
+for {set j 40} {$j<120} {incr j 40} {
     lappend points3 [list 0 $j]
     lappend points3 [list 159 $j]
 }
