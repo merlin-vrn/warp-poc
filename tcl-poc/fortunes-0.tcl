@@ -95,11 +95,16 @@ proc handle_site_event { state_name site } {
         # Это может произойти только в самом начале, пока мы проходим по сайтам с самой малой координатой y и она у них всех совпадает
         # В любом другом случае над сайтом, совпадающем с другим по высоте, всегда найдётся для разбиения дуга, порождённая каким-то из сайтов с ординатой меньше.
         puts [format "    сайты лежат на одной высоте; по горизонтали: новый [y]%g[n], старый [y]%g[n]" $x $sx]
+        # Создаётся два бесконечных вертикальных полуребра, хотя точка излома одна (правая). С левым полуребром не связывается никакая точка излома.
+        set le [new_edge]
+        set re [new_edge]
         set narc [new_arc]
         set rbp [new_breakpoint]
         set state($narc) [dict create site $site parent $rbp]
-        set state($rbp) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] -Inf] edir [list 0 Inf]]
-        # TODO: Здесь должно быть два полуребра, но точка излома одна.
+        # точка излома ассоциируется с границей, связаной с правым сайтом
+        set state($rbp) [dict create parent $parent path $subpath estart [list [expr {($x+$sx)/2}] -Inf] edir [list 0 Inf] edge $re]
+        set state($le) [dict create sibling $re point [list [expr {($x+$sx)/2}] Inf] direction [list 0 -Inf]] ;# новые полурёбра являются двойниками друг друга
+        set state($re) [dict create sibling $le point [list [expr {($x+$sx)/2}] -Inf] direction [list 0 Inf]] ;# про их координаты почти ничего неизвестно :(
         dict set state($split_arc) parent $rbp
         if {$x>[lindex $state($split_site) 0]} { ;# Новая дуга справа
             if {[dict exists $state($split_arc) right]} { ;# Если у старой дуги был сосед справа, 
@@ -111,6 +116,9 @@ proc handle_site_event { state_name site } {
             dict_mset state($split_arc) right $narc path left
             dict_mset state($narc) left $split_arc path right
             dict_mset state($rbp) breakpoint [list $split_site $site] left $split_arc right $narc
+            # Направления полурёбер выбираются такими, чтобы они обходили сайт против часовой стрелки. Т.е. если смотреть на полуребро из сайта, оно смотрит налево.
+            dict_mset state($le) site $split_site
+            dict_mset state($re) site $site 
             set _info "слева старая дуга [b]$split_arc[n] ([b]$split_site[n]), справа новая дуга [c]$narc[n] ([c]$site[n])"
         } else { ;# Новая дуга слева
             if {[dict exists $state($split_arc) left]} { ;# Если у старой дуги слева был сосед, 
@@ -121,7 +129,10 @@ proc handle_site_event { state_name site } {
             # Соседство: narc - сосед split_arc слева, split_arc - сосед narc справа 
             dict_mset state($split_arc) left $narc path right
             dict_mset state($narc) right $split_arc path left
-            dict_mset state($rbp) breakpoint [list $site $split_site] left $narc right $split_arc
+            dict_mset state($rbp) breakpoint [list $site $split_site] left $narc right $split_arc 
+            # Направления полурёбер выбираются такими, чтобы они обходили сайт против часовой стрелки. Т.е. если смотреть на полуребро из сайта, оно смотрит налево.
+            dict_mset state($le) site $site 
+            dict_mset state($re) site $split_site
             set _info "слева новая дуга [c]$narc[n] ([c]$site[n]), справа старая дуга [b]$split_arc[n] ([b]$split_site[n])"
         }
         puts "Точка излома [c]$rbp[n] ($state($rbp)): $_info"
@@ -133,18 +144,26 @@ proc handle_site_event { state_name site } {
         set rarc [new_arc]
         set lbp [new_breakpoint]
         set rbp [new_breakpoint]
+        set le [new_edge]
+        set re [new_edge]
 
-        # Координаты новых полурёбер: точка начала x, py, вектор направления vx, vy (левое), -vx, -vy (правое)
+        # Координаты новых полурёбер: точка начала x, py, вектор направления vx, vy (смотрит налево), -vx, -vy (смотрит направо)
         set vx [expr {$sy-$y}]
         set vy [expr {$x-$sx}]
         set py [expr {$vy*$vy/(2.0*$vx)+($sy+$y)/2.0}] ;# Точка на параболе над новым сайтом: py=(x-sx)²/(2(sy-y))+(sy+y)/2
+        
+        # Направления полурёбер выбираются такими, чтобы они обходили сайт против часовой стрелки. Т.е. если смотреть на полуребро из сайта, оно смотрит налево.
+        set state($le) [dict create sibling $re point [list $x $py] direction [list $vx $vy] site $site]
+        set state($re) [dict create sibling $le point [list $x $py] direction [list [expr {-$vx}] [expr {-$vy}]] site $split_site]
 
         set state($carc) [dict create site $site left $split_arc right $rarc parent $lbp path right] ;# средний кусочек — дуга от нового сайта
         puts [format "    новая дуга [c]$carc[n] разбивает [b]$split_arc[n] на две части в точке %g, %g" $x $py]
-        set state($lbp) [dict create breakpoint [list $split_site $site] left $split_arc right $carc  parent $rbp path left estart [list $x $py] edir [list $vx $vy]]
+        # точка излома ассоциируется с границей, связаной с правым сайтом, в данном случае с site связан le
+        set state($lbp) [dict create breakpoint [list $split_site $site] left $split_arc right $carc  parent $rbp path left estart [list $x $py] edir [list $vx $vy] edge $le]
         puts "Леавя точка излома [c]$lbp[n] ($state($lbp)): слева старая дуга [b]$split_arc[n] ([b]$split_site[n]), справа новая дуга [c]$carc[n] ([c]$site[n])"
         set state($rarc) [dict create site $split_site left $carc parent $rbp path right] ;# правый кусочек — "копия" левого
-        set state($rbp) [dict create breakpoint [list $site $split_site] left $lbp right $rarc parent $parent path $subpath estart [list $x $py] edir [list [expr {-$vx}]  [expr {-$vy}]]]
+        # точка излома ассоциируется с границей, связаной с правым сайтом, в данном случае с split_site связан re
+        set state($rbp) [dict create breakpoint [list $site $split_site] left $lbp right $rarc parent $parent path $subpath estart [list $x $py] edir [list [expr {-$vx}]  [expr {-$vy}]] edge $re]
         puts "Правая точка излома [c]$rbp[n] ($state($rbp)): слева поддерево [m]$lbp[n] (сайт [c]$site[n]), справа копия старой дуги [c]$rarc[n] ([b]$split_site[n])"
         # Обновляем соседей
         if {[dict exists $state($split_arc) right]} { ;# если у разбиваемой дуги был сосед справа,
@@ -203,6 +222,10 @@ proc check_add_circle { state_name carc y } {
     }
 
     # Точки излома слева и справа
+
+    # parent(carc) и nca(larc,rarc) — это тот же самый набор, что и nca(larc,carc) и nca(carc,rarc), но неизвестно, в каком порядке
+    # теоретически, от перестановки левой и правой точки излома вообще ничего не должно измениться
+    # TODO: хранить в дугах эту информацию!
     set lbp [find_nearest_common_ancestor state $larc $carc]
     set rbp [find_nearest_common_ancestor state $carc $rarc]
     
@@ -360,6 +383,11 @@ proc handle_circle_event { state_name circle } {
 
     # 1. Удаляем схлопнувшуюся дугу и всё, что с ней связано
     
+    # parent и nca(larc,rarc) — это тот же самый набор, что и nca(larc,arc) и nca(arc,rarc), но неизвестно, в каком порядке
+    # TODO: хранить в дугах эту информацию!
+    set lbp [find_nearest_common_ancestor state $larc $arc]
+    set rbp [find_nearest_common_ancestor state $arc $rarc]
+    
     # 1.1 удаляем из береговой линии
     dict set state($larc) right $rarc
     dict set state($rarc) left $larc
@@ -370,6 +398,7 @@ proc handle_circle_event { state_name circle } {
     # и нужно указать новое направление полуребра!
     # находим общего предка новых "соседних" дуг и устанавливаем их сайты в качестве точки излома этого предка
     set nca [find_nearest_common_ancestor state $larc $rarc]
+    # полурёбра, которые соединились в точке, связаны с точками излома parent и nca
     set lsite [dict get $state($larc) site]
     set rsite [dict get $state($rarc) site]
     lassign $state($lsite) xl yl
@@ -378,8 +407,6 @@ proc handle_circle_event { state_name circle } {
     set vy [expr {$xr-$xl}]
     dict_mset state($nca) breakpoint [list $lsite $rsite] estart [list $x $y] edir [list $vx $vy]
     
-    puts "    Обновленная точка излома между [b]$larc[n] ($lsite) и [b]$rarc[n] ($rsite): [c]$nca[n] ($state($nca))"
-
     # 1.4 Удаляем все события окружность, которые включали удалённую дугу
     check_invalidate_circle state $larc
     check_invalidate_circle state $rarc
@@ -390,16 +417,56 @@ proc handle_circle_event { state_name circle } {
     set csite [dict get $state($arc) site]
     
     set vertex [new_vertex]
-    set state($vertex) [list x $x y $y sites [list $lsite $csite $rsite]]
+    set state($vertex) [list x $x y $y r $r sites [list $lsite $csite $rsite]]
+
+    # эти полурёбра заканчиваются в настоящей вершине
+    set l_edge [dict get $state($lbp) edge]
+    set r_edge [dict get $state($rbp) edge]
+    # эти начинаются
+    set l_edge_sibling [dict get $state($l_edge) sibling]
+    set r_edge_sibling [dict get $state($r_edge) sibling]
     
-    # на этой вершине заканчиваются несколько рёбер
-    # рёбра разделяют каждую пару сайтов; мы тут знаем только один конец ребра
-    set he_cr [new_halfedge]
-    set he_lc [new_halfedge]
-    set he_rl [new_halfedge]
-    set state($he_cr) [list lsite $csite rsite $rsite vertex $vertex]
-    set state($he_lc) [list lsite $lsite rsite $csite vertex $vertex]
-    set state($he_rl) [list lsite $rsite rsite $lsite vertex $vertex]
+    # в этой вершине начинается новое полуребро, к которому привяжем $nca, и заканчивается новый же его двойник
+    set le [new_edge]
+    set re [new_edge]
+    set state($le) [dict create sibling $re site $lsite target $vertex point [list $x $y] direction [list [expr {-$vx}] [expr {-$vy}]] next $l_edge_sibling]
+    set state($re) [dict create sibling $le site $rsite origin $vertex point [list $x $y] direction [list $vx $vy] prev $r_edge]
+
+    # привязываем так, чтобы с сайта мы видели обход вдоль рёбер против часовой стрелки, "налево"
+    dict set state($nca) edge $re
+
+    puts "    Обновленная точка излома между [b]$larc[n] ($lsite) и [b]$rarc[n] ($rsite): [c]$nca[n] ($state($nca))"
+    
+    # TODO чисто проверка, убрать
+    if {([dict get $state($l_edge) site]!=$csite)||([dict get $state($r_edge_sibling) site]!=$csite)} {
+        puts "[R]$l_edge от сайта [dict get $state($l_edge) site], $r_edge_sibling от сайта [dict get $state($r_edge_sibling) site], должно быть $csite[n]"
+    }
+    if {[dict get $state($l_edge_sibling) site]!=$lsite} {
+        puts "[R]$l_edge_sibling от сайта [dict get $state($l_edge_sibling) site], должно быть $lsite[n]"
+    }
+    if {[dict get $state($r_edge) site]!=$rsite} {
+        puts "[R]$r_edge от сайта [dict get $state($r_edge) site], должно быть $rsite[n]"
+    }
+    
+    # эти два старых полуребра в настоящей вершине замкнулись друг на друга
+    dict_mset state($l_edge) target $vertex next $r_edge_sibling
+    dict_mset state($r_edge_sibling) origin $vertex prev $l_edge
+    
+    # эти два старых полуребра замкнулись на новые полурёбра
+    dict_mset state($r_edge) target $vertex next $re
+    dict_mset state($l_edge_sibling) origin $vertex prev $le
+    
+    # запишем в вершину, какие полурёбра в ней начинаются и какие заканчиваются, в том же порядке, что и сайты
+    dict_mset state($vertex) sources [list $l_edge_sibling $r_edge_sibling $re] sinks [list $le $l_edge $r_edge]
+
+    # parent больше не точка излома, избавляемся от неё
+    unset state($parent)
+    
+    # и дуга arc больше не существует, схлопнулась
+    unset state($arc)
+    
+    # событие окружность сработало, чтобы не мозолило глаза, избавляемся. Возможно, полезно сохранить оттуда радиус в объекте vertex
+    set state($circle) 0
     
     # 3. Новые тройки добавляем как события окружность TODO: это работает неправильно :(
     check_add_circle state $larc [expr {$y+$r}]
@@ -444,14 +511,11 @@ proc compute_voronoi_diagram { points } {
     priority_queue events
     
     #
-    nextid new_arc a
-    nextid new_breakpoint b
-    nextid new_site s
-    
-    #
-    nextid new_vertex v
-    nextid new_halfedge h
-    nextid new_cell c
+    nextid new_arc a ;# дуги береговой линии
+    nextid new_breakpoint b ;# точки излома береговой линии
+    nextid new_site s ;# сайты
+    nextid new_edge e ;# полурёбра
+    nextid new_vertex v ;# вершины
 
     # 1. Инициализируем очередь событиями типа "сайт" — входные точки
     foreach p $points {
@@ -472,36 +536,14 @@ proc compute_voronoi_diagram { points } {
         print_beachline state
     }
 
-    #puts [array get state]
     # 7.
+    puts "[B]Остались дуги[n]: [array get state a*]"
+    puts "[Y]Остались точки излома[n]: [array get state b*]"
     # 8.
-    array set half_edges {}
-    array set full_edges {}
-    foreach {k v} [array get state h*] {
-        puts "Полуребро [y]$k[n] $v"
-        dict with v {
-            set my_sid "$lsite.$rsite" ;# индекс этого ребра
-            set tw_sid "$rsite.$lsite" ;# индекс его двойника
-            if {[info exists half_edges($my_sid)]} {
-                puts "    [R]такое полуребро уже было - $half_edges($my_sid)![n]"
-                continue
-            }
-            set half_edges($my_sid) [list id $k {*}$v]
-            if {[info exists half_edges($tw_sid)]} {
-                set twin [dict get $half_edges($tw_sid) id]
-                set tver [dict get $half_edges($tw_sid) vertex]
-                puts "    нашлась вторая половина полуребра: [g]$twin[n] $half_edges($tw_sid)"
-                dict_mset half_edges($my_sid) twin $twin end $tver
-                dict_mset half_edges($tw_sid) twin $k end $vertex
-                set full_edges(f[incr i]) [list $lsite $rsite $vertex $tver]
-            }
-        }
-    }
-    
-    return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get full_edges]]
+    return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get state e*]]
 }
 
-set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
+#set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 #set points $points2
 
 #set points {{5 0} {0 5} {10 5} {5 10}}
@@ -510,7 +552,7 @@ set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 #set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
 
 set V [compute_voronoi_diagram $points]
-puts "[C]Диаграмма Вороного:[n] $V"
+puts "[C]Диаграмма Вороного[n]: $V"
 
 # Визуализация
 package require Tk
@@ -524,46 +566,65 @@ set S_style {-outline #000 -fill #000 -width 1 -activeoutline #F00 -activefill #
 set V_r 2
 set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #F0F -activewidth 2 -tags {vertex clicktoinfo}}
 set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
-set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge}}
+set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge clicktoinfo}}
 set D_style {-fill #FF0 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
-#set scale 1
+set scale 1
 #set scale 4
 #set scale 30
-set scale 60
+#set scale 60
 
 dict for {k v} $V {
     switch -glob $k {
         v* { dict with v {
-            foreach site $sites {
-                lassign [dict get $V $site] sx sy
-                #.cnv create line [expr {$x*$scale}] [expr {$y*$scale}] [expr {$sx*$scale}] [expr {$sy*$scale}] {*}$L_style
-            }
             set cnv_ids([.cnv create oval [expr {$x*$scale-$V_r}] [expr {$y*$scale-$V_r}] [expr {$x*$scale+$V_r}] [expr {$y*$scale+$V_r}] {*}$V_style]) $k
         } }
         s* { 
             lassign $v sx sy
             set cnv_ids([.cnv create oval [expr {$sx*$scale-$S_r}] [expr {$sy*$scale-$S_r}] [expr {$sx*$scale+$S_r}] [expr {$sy*$scale+$S_r}] {*}$S_style]) $k
         }
-        f* {
-            lassign $v sl sr vs ve
-            set vs [dict get $V $vs]
-            set ve [dict get $V $ve]
-            lassign [dict get $V $sl] sx1 sy1
-            lassign [dict get $V $sr] sx2 sy2
-            set x1 [dict get $vs x]
-            set y1 [dict get $vs y]
-            set x2 [dict get $ve x]
-            set y2 [dict get $ve y]
-            .cnv create line [expr {$x1*$scale}] [expr {$y1*$scale}] [expr {$x2*$scale}] [expr {$y2*$scale}] {*}$E_style
-            .cnv create line [expr {$sx1*$scale}] [expr {$sy1*$scale}] [expr {$sx2*$scale}] [expr {$sy2*$scale}] {*}$D_style
+        e* {
+            # все рёбра прорисуются дважды (один раз в каждом направлении)!
+            if {![dict exists $v target]||![dict exists $v origin]} {
+                puts "[r]$k[n]: $v"
+                continue
+            }
+            set target [dict get $v target]
+            set origin [dict get $v origin]
+            set xo [dict get $V $origin x]
+            set yo [dict get $V $origin y]
+            set xt [dict get $V $target x]
+            set yt [dict get $V $target y]
+            set cnv_ids([.cnv create line [expr {$xo*$scale}] [expr {$yo*$scale}] [expr {$xt*$scale}] [expr {$yt*$scale}] {*}$E_style]) $k
+#            .cnv create line [expr {$sx1*$scale}] [expr {$sy1*$scale}] [expr {$sx2*$scale}] [expr {$sy2*$scale}] {*}$D_style
         }
     }
 }
 
 proc clicktoinfo { } {
     global V cnv_ids tv_sts
-    # определяем, по какому элементу canvas кликнули, а потом по массиву cnv_ids преобразуем в элемент диаграммы Вороного
+    # определяем, по какому элементу canvas кликнули
     set cnv_id [.cnv find withtag current]
-    set tv_sts "$cnv_ids($cnv_id) [dict get $V $cnv_ids($cnv_id)]"
-    puts "[m]$cnv_ids($cnv_id)[n] [dict get $V $cnv_ids($cnv_id)]"
+    # по массиву cnv_ids преобразуем в ID элемента диаграммы Вороного
+    set id $cnv_ids($cnv_id)
+
+    switch -glob $id {
+        v* { dict with V $id {
+            set tv_sts [format "$id: вершина (%g, %g) на расстоянии %g от сайтов $sites, начало рёбер $sources, конец рёбер $sinks" $x $y $r]
+            puts [format "[m]$id[n]: вершина (%g, %g) на расстоянии %g от сайтов $sites, начало рёбер $sources, конец рёбер $sinks" $x $y $r]
+        } }
+        s* { 
+            lassign [dict get $V $id] sx sy
+            set tv_sts [format "$id: сайт (%g, %g)" $sx $sy]
+            puts [format "[m]$id[n]: сайт (%g, %g)" $sx $sy]
+        }
+        e* {
+            set sid [dict get $V $id sibling]
+            set site [dict get $V $id site]
+            set ssite [dict get $V $sid site]
+            set v1 [dict get $V $id origin]
+            set v2 [dict get $V $id target]
+            set tv_sts "$id+$sid: ребро между $site и $ssite, соединяет вершины $v1 и $v2"
+            puts "[m]$id+$sid[n]: ребро между $site и $ssite, соединяет вершины $v1 и $v2"
+        }
+    }
 }
