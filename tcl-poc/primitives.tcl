@@ -35,6 +35,45 @@ proc find_circle { x1 y1 x2 y2 x3 y3 } {
     return [list $x $y $r]
 }
 
+# Если построить луч из точки (xo, yo) вдоль вектора (xd, yd), он пересечёт прямоугольник-границу, заданную xmin, ymin, xmax, ymax,
+# в некоторой точке. Функция возвращает координаты этой точки. Не проверяется, находится ли точка (xo, yo) внутри прямоугольника.
+# Если (xo, yo) находится вне прямоугольника, может возникнуть неопределённое поведение (некорректный результат, исключение).
+proc constraint_vector { xo yo xd yd xmin ymin xmax ymax } {
+    if {$xd!=0} {
+        set t [expr {($xmin-$xo)/$xd}]
+        if {$t>=0} {
+            set x $xmin
+        } else {
+            set t [expr {($xmax-$xo)/$xd}]
+            set x $xmax
+        }
+        set y [expr {$t*$yd+$yo}]
+#        puts [format "X test: t=%g, x=%g, y=%g" $t $x $y]
+    } else {
+        set t Inf
+    }
+    if {$yd!=0} {
+        set ty [expr {($ymin-$yo)/$yd}]
+        if {$ty>=0} {
+            set yy $ymin
+        } else {
+            set ty [expr {($ymax-$yo)/$yd}]
+            set yy $ymax
+        }
+#        puts [format "Y test: t=%g, x=%g, y=%g" $ty [expr {$ty*$xd+$xo}] $yy]
+        if {$ty<$t} {
+            set t $ty
+            set y $yy
+            set x [expr {$t*$xd+$xo}]
+#            puts "Y wins"
+        } else {
+#            puts "X wins"
+        }
+    }
+#    puts "t=$t x=$x y=$y"
+    return [list $x $y]
+}
+
 # генератор последовательности
 
 # использование: [nextid name prefix] создаёт команду [name]

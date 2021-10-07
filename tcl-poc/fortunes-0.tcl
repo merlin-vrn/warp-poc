@@ -111,6 +111,7 @@ proc handle_site_event { state_name site } {
         set state($rbp) [dict create parent $parent path $subpath edge $re]
         set state($le) [dict create sibling $re point [list [expr {($x+$sx)/2}] Inf] direction [list 0 [expr {-$vy}]]] ;# новые полурёбра являются двойниками друг друга
         set state($re) [dict create sibling $le point [list [expr {($x+$sx)/2}] -Inf] direction [list 0 $vy]] ;# координата y точки начала неизвестна :(
+        puts [format "    Новые полурёбра: [c]$re[n] (%g, -∞) → (0, %g) и [c]$le[n]" [expr {($x+$sx)/2}] $vy]
         dict set state($split_arc) parent $rbp
         if {$x>$sx} { ;# Новая дуга справа
             if {[dict exists $state($split_arc) right]} { ;# Если у старой дуги был сосед справа, 
@@ -163,6 +164,8 @@ proc handle_site_event { state_name site } {
         # Направления полурёбер выбираются такими, чтобы они обходили сайт против часовой стрелки. Т.е. если смотреть на полуребро из сайта, оно смотрит налево.
         set state($le) [dict create sibling $re point [list $x $py] direction [list $vx $vy] site $site]
         set state($re) [dict create sibling $le point [list $x $py] direction [list [expr {-$vx}] [expr {-$vy}]] site $split_site]
+        
+        puts [format "    Новые полурёбра: [c]$le[n] (%g, %g) → (%g, %g) и [c]$re[n]" $x $py $vx $vy]
 
         set state($carc) [dict create site $site left $split_arc right $rarc parent $lbp path right lbp $lbp rbp $rbp] ;# средний кусочек — дуга от нового сайта
         puts [format "    новая дуга [c]$carc[n] разбивает [b]$split_arc[n] на две части в точке %g, %g" $x $py]
@@ -405,6 +408,10 @@ proc handle_circle_event { state_name circle } {
     
     # запишем в вершину, какие полурёбра в ней начинаются и какие заканчиваются, в том же порядке, что и соответствующие сайты
     dict_mset state($vertex) sources [list $l_edge_sibling $r_edge_sibling $re] sinks [list $le $l_edge $r_edge]
+    
+    puts [format "    Создана вершина [c]$vertex[n] ([c]%g[n], [c]%g[n]) на расстоянии [m]%g[n] от сайтов [m]$lsite $csite $rsite[n]." $x $y $r]
+    puts "    В этой вершине: [m]$lsite[n] [c]$le[n]→[b]$l_edge_sibling[n], [m]$rsite[n] [b]$r_edge[n]→[c]$re[n], [m]$csite[n] [b]$l_edge[n]→[b]$r_edge_sibling[n]."
+    puts [format "    Новые полурёбра: [c]$re[n] (%g, %g) и [c]$le[n]" $vx $vy]
 
     # parent больше не точка излома, избавляемся от неё
     unset state($parent)
@@ -474,13 +481,13 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
     
     # 2. Пока есть события,
     while {[events length]>0} { 
-        # 3. Выбираем событие с наибольшей координатой y (приоритетом)
+        # 3. Выбираем событие с наименьшей координатой y (наибольшим приоритетом)
         set evt_data [lassign [events get] evt_prio evt_type]
         puts [format "[G]%g: [y]$evt_type[n][G] $evt_data[n]" $evt_prio]
         # 4. Если это событие "сайт", 5. Обрабатываем как сайт, иначе 6. Обрабатываем как окружность
         handle_${evt_type}_event state $evt_data
         
-        print_beachline state
+#        print_beachline state
     }
 
     # 7.
@@ -488,54 +495,30 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
     puts "[Y]Остались точки излома[n]: [array get state b*]"
     # 8.
     # Для каждого из полурёбер, у которых не задан target, находим пересечение с границей окна и создаём там вершину, её и назначаем target.
-    # А полуребру-двойнику назначаем эту вершину как origin
+    # А полуребру-двойнику назначаем эту вершину как origin. Эти новые вершины получают отрицательные индексы (т.к. это не настоящие вершины диаграммы Вороного)
     set vni 0 ;# vertex negative index
     foreach {id edge} [array get state e*] {
         if {[dict exists $edge target]} { continue }
         dict with edge {
             set xo [dict get $state($origin) x]
             set yo [dict get $state($origin) y]
-            lassign $direction xd yd
-#            puts "[y]$e[n] $v"
-            if {$xd!=0} {
-                set t [expr {($xmin-$xo)/$xd}]
-                if {$t>=0} {
-                  set x $xmin
-                } else {
-                    set t [expr {($xmax-$xo)/$xd}]
-                    set x $xmax
-                }
-                set y [expr {$t*$yd+$yo}]
-#                puts [format "X test: t=%g, x=%g, y=%g" $t $x $y]
-            } else {
-                set t Inf
+            if {($xo<$xmin)||($xo>$xmax)||($yo<$ymin)||($yo>$ymax)} {
+                puts [format "[r]$id[n]: Начало [r]$origin[n] ([r]%g[n], [r]%g[n]) расположено за пределами окна" $xo $yo]
+                continue
             }
-            if {$yd!=0} {
-                set ty [expr {($ymin-$yo)/$yd}]
-                if {$ty>=0} {
-                  set yy $ymin
-                } else {
-                    set ty [expr {($ymax-$yo)/$yd}]
-                    set yy $ymax
-                }
-#                puts [format "Y test: t=%g, x=%g, y=%g" $ty [expr {$ty*$xd+$xo}] $yy]
-                if {$ty<$t} {
-                    set t $ty
-                    set y $yy
-                    set x [expr {$t*$xd+$xo}]
-#                    puts "Y wins"
-                } else {
-#                    puts "X wins"
-                }
-            }
-#            puts "t=$t x=$x y=$y"
+            lassign [constraint_vector $xo $yo {*}$direction $xmin $ymin $xmax $ymax] x y
         }
         set vertex "v[incr vni -1]"
         # тут будет максимум два сайта
-        set state($vertex) [dict create x $x y $y r Inf sites [list $site [dict get $state($sibling) site]] sources $sibling sinks $id]
+        lassign $state($site) sx sy
+        set state($vertex) [dict create x $x y $y r [expr {hypot($x-$sx,$y-$sy)}] sites [list $site [dict get $state($sibling) site]] sources $sibling sinks $id]
         dict set state($id) target $vertex
         dict set state($sibling) origin $vertex
     }
+    # TODO: Более глобральная постобработка: 
+    # Обрезать также "полные" полурёбра, которые частично вылезают за границы окна (т.е. для которых вершины получились за пределами окна).
+    # Удалять полурёбра, которые лежат целиком вне окна (полные или с неопределённой границей).
+    # Создавать полурёбра, совпадающие с границами окна чтобы замкнуть все пограничные ячейки.
     
     return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get state e*]]
 }
@@ -543,10 +526,10 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 #set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 #set points $points3
 
-#set points {{5 0} {0 5} {10 5} {5 10}}
-#set points {{1 2} {8 1} {9 8} {2 9}}
-#set points {{9 2} {1 8} {2 1} {8 9}}
 #set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
+
+#set points {{0 0} {0 39} {20 0} {20 39} {40 0} {40 39} {0 20} {59 20}}
+set points {{0 0} {20 0} {20 39} {40 0} {40 39} {59 20}}
 
 # автовычисление масштаба
 set p0 [lindex $points 0]
