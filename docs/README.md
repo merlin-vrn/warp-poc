@@ -2,8 +2,6 @@
 
 * https://people.inf.elte.hu/fekete/algoritmusok_msc/terinfo_geom/konyvek/Computational%20Geometry%20-%20Algorithms%20and%20Applications,%203rd%20Ed.pdf (скачан)
 * https://math.stackexchange.com/questions/1579756/check-if-a-point-lies-in-a-circle-defined-by-three-other-points
-
-
 * http://paulbourke.net/papers/triangulate/
 
 ## Алгоритм Форчуна
@@ -14,5 +12,5 @@
 * Куча прикольных ссылок на ресурсы про алгоритм Форчуна https://stackoverflow.com/questions/982928/confused-with-voronoi-diagram-algorithm-fortunes-sweepline/17182583#17182583
 * Пограничные случаи https://stackoverflow.com/questions/45963578/voronoi-diagram-fortune-algorithm-special-cases
 
-##Экзотика
+## Экзотика
 * Заметающая окружность https://stackoverflow.com/questions/37009134/fortunes-algorithm-and-circle-as-sweep-line
