@@ -23,12 +23,17 @@ proc check_invalidate_circle { state_name arc } {
     upvar 1 $state_name state
 
     if {[dict exists $state($arc) circle]} {
-        puts "    событие окружность [r][dict get $state($arc) circle][n] ($state([dict get $state($arc) circle])) - ложная тревога"
-        set state([dict get $state($arc) circle]) 0
+        set circle [dict get $state($arc) circle]
+        if {$state($circle)==0} {
+            puts "    [R]событие окружность $circle было отменено ранее[n]"
+        } else {
+            lassign $state($circle) x y r
+            puts [format "    событие окружность [r]$circle[n] (%g, %g; %g) - ложная тревога" $x $y $r]
+            set state($circle) 0
+        }
+        # отвязываем дугу от события
+        dict unset state($arc) circle
     }
-    
-    # освобождаем дугу от события
-    dict unset state($arc) circle
 }
 
 # находит дугу, находящуюся над точкой x, когда заметающая линия находится в положении y
@@ -37,19 +42,19 @@ proc find_arc_above { state_name x y } {
 
     set item $state(T) ;# начиная с дерева
     while {![dict exists $state($item) site]} { ;# у дуги всегда есть свойство — порождающий сайт, а у точки излома нет такого свойства
-        lassign [dict get $state($item) breakpoint] lsite rsite ;# это ссылки соответственно на дугу "слева" и "справа" от точки излома
+        lassign [dict get $state($item) breakpoint] lsite rsite ;# это ссылки соответственно на сайты, порождающие дуги "слева" и "справа" от точки излома
         lassign [dict get $state($lsite)] xl yl
         lassign [dict get $state($rsite)] xr yr
-        puts [format "    [y]$item[n] => $state($item) - точка излома между дуг сайта [y]$lsite[n] (%g, %g) и сайта [y]$rsite[n] (%g, %g)" $xl $yl $xr $yr]
+        puts [format "    [y]$item[n] - точка излома между дуг сайта [y]$lsite[n] (%g, %g) и сайта [y]$rsite[n] (%g, %g)" $xl $yl $xr $yr]
         if {$yr!=$yl} {
             # в уравнении два корня, если поменять порядок точек - корни меняются местами. Здесь нужен со знаком "-" перед sqrt (TODO: почему именно этот)
             set xlr [expr {($xr*($y-$yl)-$xl*($y-$yr)-hypot($xl-$xr,$yl-$yr)*sqrt(($y-$yl)*($y-$yr)))/($yr-$yl)}] ;# точка пересечения парабол
         } else {
-            set xlr [expr {($xl+$xr)/2}] ;# если они находятся на одной высоте, это "вертикальное бесконечное" ребро
+            set xlr [expr {($xl+$xr)/2}] ;# если фокусы находятся на одной высоте, точка пересечения у парабол тоже одна и она посередине
         }
         set subpath [expr {($x<$xlr)?"left":"right"}]
         set item [dict get $state($item) $subpath]
-        puts [format "    точка излома: [m]%g[n], сайт: [c]%g[n] — переход [y]$subpath[n] к [m]$item[n]" $xlr $x]
+        puts [format "    точка излома: ([m]%g[n], %g), сайт: ([c]%g[n], %g) — переход [y]$subpath[n] к [m]$item[n]" $xlr $y $x $y]
     }
     return $item
 }
@@ -221,7 +226,7 @@ proc check_add_circle { state_name carc y } {
     set circle [new_circle $lsite $csite $rsite]
     # проверяем, не было ли уже окружности через эти же сайты, возможно, перечисленные в другом порядке
     if {[info exists state($circle)]} {
-        puts "    Окружность через сайты [b]$rsite[n], [b]$csitep[n], [b]$lsite[n] мы уже обрабатывали"
+        puts "    Окружность через сайты [b]$rsite[n], [b]$csite[n], [b]$lsite[n] мы уже обрабатывали"
         return 0
     }
 
@@ -446,8 +451,8 @@ proc new_circle {args} {
     return $c
 }
 
-# Рассчитывает диаграмму Вороного для набора точек points
-proc compute_voronoi_diagram { points } {
+# Рассчитывает диаграмму Вороного для набора точек points и обрезает бесконечные рёбра и ячейки по указанному окну
+proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
     # стр. 157
     # Очередь с приоритетами
     priority_queue events
@@ -482,6 +487,56 @@ proc compute_voronoi_diagram { points } {
     puts "[B]Остались дуги[n]: [array get state a*]"
     puts "[Y]Остались точки излома[n]: [array get state b*]"
     # 8.
+    # Для каждого из полурёбер, у которых не задан target, находим пересечение с границей окна и создаём там вершину, её и назначаем target.
+    # А полуребру-двойнику назначаем эту вершину как origin
+    set vni 0 ;# vertex negative index
+    foreach {id edge} [array get state e*] {
+        if {[dict exists $edge target]} { continue }
+        dict with edge {
+            set xo [dict get $state($origin) x]
+            set yo [dict get $state($origin) y]
+            lassign $direction xd yd
+#            puts "[y]$e[n] $v"
+            if {$xd!=0} {
+                set t [expr {($xmin-$xo)/$xd}]
+                if {$t>=0} {
+                  set x $xmin
+                } else {
+                    set t [expr {($xmax-$xo)/$xd}]
+                    set x $xmax
+                }
+                set y [expr {$t*$yd+$yo}]
+#                puts [format "X test: t=%g, x=%g, y=%g" $t $x $y]
+            } else {
+                set t Inf
+            }
+            if {$yd!=0} {
+                set ty [expr {($ymin-$yo)/$yd}]
+                if {$ty>=0} {
+                  set yy $ymin
+                } else {
+                    set ty [expr {($ymax-$yo)/$yd}]
+                    set yy $ymax
+                }
+#                puts [format "Y test: t=%g, x=%g, y=%g" $ty [expr {$ty*$xd+$xo}] $yy]
+                if {$ty<$t} {
+                    set t $ty
+                    set y $yy
+                    set x [expr {$t*$xd+$xo}]
+#                    puts "Y wins"
+                } else {
+#                    puts "X wins"
+                }
+            }
+#            puts "t=$t x=$x y=$y"
+        }
+        set vertex "v[incr vni -1]"
+        # тут будет максимум два сайта
+        set state($vertex) [dict create x $x y $y r Inf sites [list $site [dict get $state($sibling) site]] sources $sibling sinks $id]
+        dict set state($id) target $vertex
+        dict set state($sibling) origin $vertex
+    }
+    
     return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get state e*]]
 }
 
@@ -493,7 +548,20 @@ proc compute_voronoi_diagram { points } {
 #set points {{9 2} {1 8} {2 1} {8 9}}
 #set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
 
-set V [compute_voronoi_diagram $points]
+# автовычисление масштаба
+set p0 [lindex $points 0]
+lassign $p0 minx miny
+lassign $p0 maxx maxy
+unset p0
+foreach p $points {
+    lassign $p x y
+    if {$x>$maxx} { set maxx $x } else { if {$x<$minx} { set minx $x } }
+    if {$y>$maxy} { set maxy $y } else { if {$y<$miny} { set miny $y } }
+}
+set scale [expr {min(($width-1)/$maxx,($height-1)/$maxy)}]
+puts [format "Диапазон координат: [y]%g[n]÷[y]%g[n], [y]%g[n]÷[y]%g[n]; устанавливаем масштаб [c]%g[n]" $minx $maxx $miny $maxy $scale]
+
+set V [compute_voronoi_diagram $points 0 0 $maxx $maxy]
 puts "[C]Диаграмма Вороного[n]: $V"
 
 # Визуализация
@@ -510,10 +578,6 @@ set V_style {-outline #00F -fill #00F -width 1 -activeoutline #F0F -activefill #
 set L_style {-fill #0FF -activefill #FF0 -width 1 -activewidth 2 -tags {line}}
 set E_style {-fill #00F -activefill #F0F -width 1 -activewidth 2 -tags {edge clicktoinfo}}
 set D_style {-fill #FF0 -activefill #F00 -width 1 -activewidth 2 -tags {triangulation}}
-set scale 1
-#set scale 4
-#set scale 30
-#set scale 60
 
 dict for {k v} $V {
     switch -glob $k {
