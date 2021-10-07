@@ -249,15 +249,29 @@ proc check_add_circle { state_name carc y } {
     lassign $state($lsite) xl yl
     lassign $state($csite) xc yc
     lassign $state($rsite) xr yr
+
+# https://stackoverflow.com/questions/9612065/breakpoint-convergence-in-fortunes-algorithm/27882090#27882090
+# https://math.stackexchange.com/questions/1324179/how-to-tell-if-3-connected-points-are-connected-clockwise-or-counter-clockwise/1324213#1324213
+
+    set D [expr {($xr-$xc)*($yl-$yc)-($xl-$xc)*($yr-$yc)}]
+    if {$D==0} {
+        puts [format "    сайты [r]$lsite[n] (%g, %g), [r]$csite[n] (%g, %g), [r]$rsite[n] (%g, %g) находтся на одной прямой" $xl $yl $xc $yc $xr $yr]
+        return 0
+    }
+    if {$D<0} {
+        puts [format "    полурёбра [r]$le[n] и [r]$re[n] не пересекаются"]
+        return 0
+    }
     
+if 0 { ;# Это, похоже, численно неустойчиво.
     # Координаты полурёбер
     lassign [dict get $state($le) point] xsl ysl ;# Left half-edge Start x, y
     lassign [dict get $state($le) direction] xdl ydl ;# Left half-edge Direction x, y
     lassign [dict get $state($re) point] xsr ysr
     lassign [dict get $state($re) direction] xdr ydr
     puts [format "    Координаты полурёбер: [m]$le[n]: (%g, %g) → (%g, %g); [m]$re[n]: (%g, %g) → (%g, %g)" $xsl $ysl $xdl $ydl $xsr $ysr $xdr $ydr]
-    
-    # TODO: в этой логике где-то всё равно не всё в порядке :(
+
+    # TODO: в этой логике где-то всё равно не всё в порядке :( 
     if {$ysl==-Inf} { ;# левое полуребро — бесконечное вертикальное
         if {(($xsl-$xsr)>0) || ($xdr>=0)} {
             puts "    левое полуребро [r]$le[n] вертикальное бесконечное, а правое [r]$re[n] с ним не пересекается — параллельно или направлено в другую сторону"
@@ -294,6 +308,7 @@ proc check_add_circle { state_name carc y } {
             puts [format "    [c]tl[n] = [m]%g[n] ≥ 0, [c]tr[n] = [m]%g[n] ≥ 0 — полурёбра [g]$le[n] и [g]$re[n] пересекаются" $tl $tr]
         }
     }
+}
 
     # Если вычислять cx и cy исходя из пересечения прямых, иногда происходит страшная потеря точности, поэтому вычисляем так.
     lassign [find_circle $xr $yr $xc $yc $xl $yl] cx cy r
@@ -529,7 +544,20 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 #set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
 
 #set points {{0 0} {0 39} {20 0} {20 39} {40 0} {40 39} {0 20} {59 20}}
-set points {{0 0} {20 0} {20 39} {40 0} {40 39} {59 20}}
+#set points {{0 0} {20 0} {20 39} {40 0} {40 39} {59 20}}
+
+#set points {{0 0} {0 19} {10 0} {10 19} {20 0} {20 19} {0 10} {29 10}}
+#set points {
+#    {19.999999999501842 19.000000000456083}
+#    {4.1109658959838403e-10 10.000000000300382}
+#    {28.999999999509853 10.000000000121869}
+#    {-2.1461658306169165e-10 -6.091151785147914e-11}
+#    {2.601194701903125e-10 18.999999999827935}
+#    {10.000000000111756 2.930318479393758e-10}
+#    {9.999999999986269 19.000000000211607}
+#    {20.000000000450154 -2.800915188994685e-10}
+#}
+
 
 # автовычисление масштаба
 set p0 [lindex $points 0]
