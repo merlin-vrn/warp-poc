@@ -111,6 +111,8 @@ proc handle_site_event { state_name site } {
 #        set vy [expr {abs($x-$sx)}]
         # точка излома ассоциируется с полуребром, связанным с правым сайтом
         set state($rbp) [dict create parent $parent path $subpath edge $re]
+        # второе полуребро запоминаем в структуре, чтобы потом не отыскивать
+        lappend state(infinite_edges) $le
         set state($le) [dict create sibling $re] ;# новые полурёбра являются двойниками друг друга
         set state($re) [dict create sibling $le] ;# координата y точки начала неизвестна :(
         puts "    Новые полурёбра: [c]$le[n], [c]$re[n]"
@@ -128,6 +130,11 @@ proc handle_site_event { state_name site } {
             dict_mset state($rbp) breakpoint [list $split_site $site] left $split_arc right $narc
             dict set state($le) site $split_site
             dict set state($re) site $site 
+
+            # ссылка на полурёбра из ячейки TODO: сделать нормальную структуру s* 
+            lappend state(E$split_site) $le
+            lappend state(E$site) $re
+
             set _info "слева старая дуга [b]$split_arc[n] ([b]$split_site[n]), справа новая дуга [c]$narc[n] ([c]$site[n])"
         } else { ;# Новая дуга слева
             if {[dict exists $state($split_arc) left]} { ;# Если у старой дуги слева был сосед, 
@@ -142,6 +149,11 @@ proc handle_site_event { state_name site } {
             dict_mset state($rbp) breakpoint [list $site $split_site] left $narc right $split_arc 
             dict set state($le) site $site 
             dict set state($re) site $split_site
+
+            # ссылка на полурёбра из ячейки TODO: сделать нормальную структуру s* 
+            lappend state(E$site) $le
+            lappend state(E$split_site) $re
+
             set _info "слева новая дуга [c]$narc[n] ([c]$site[n]), справа старая дуга [b]$split_arc[n] ([b]$split_site[n])"
         }
         puts "Точка излома [c]$rbp[n] ($state($rbp)): $_info"
@@ -162,7 +174,11 @@ proc handle_site_event { state_name site } {
         
         set state($le) [dict create sibling $re site $site]
         set state($re) [dict create sibling $le site $split_site]
-        
+
+        # ссылка на полурёбра из ячейки TODO: сделать нормальную структуру s* 
+        lappend state(E$site) $le
+        lappend state(E$split_site) $re
+
         puts "    Новые полурёбра: [c]$le[n], [c]$re[n]"
 
         set state($carc) [dict create site $site left $split_arc right $rarc parent $lbp path right lbp $lbp rbp $rbp] ;# средний кусочек — дуга от нового сайта
@@ -267,7 +283,7 @@ proc check_add_circle { state_name carc y } {
     # TODO Если нижняя точка окружности выше текущего события, это странно, возможно ли вообще такое? Оказывается, возможно, но похоже это была потеря точности.
     if {$cy+$r<$y} {
         puts [format "    [R]нижняя точка окружности $circle %g лежит выше текущего события %g[n]" [expr {$cy+$r}] $y]
-        return 0
+#        return 0
     }
 
     # Приоритетом события "окружность" будет её нижняя точка
@@ -353,6 +369,13 @@ proc handle_circle_event { state_name circle } {
 
     set state($le) [dict create sibling $re site $lsite target $vertex next $l_edge_sibling]
     set state($re) [dict create sibling $le site $rsite origin $vertex prev $r_edge]
+    
+    # ссылка на полурёбра и вершину из ячеек TODO: сделать вместо этого структуру state(s*) подобно state(v*): point [list x y] edges [list ...] vertices [list ...]
+    lappend state(E$lsite) $le
+    lappend state(E$rsite) $re
+    lappend state(V$lsite) $vertex
+    lappend state(V$csite) $vertex
+    lappend state(V$rsite) $vertex
 
     # привязываем так, чтобы с сайта мы видели обход вдоль рёбер против часовой стрелки, "налево"
     dict set state($nca) edge $re
@@ -388,35 +411,132 @@ proc handle_circle_event { state_name circle } {
     check_add_circle state $rarc [expr {$y+$r}]
 }
 
-# распечатывает береговую линию
-proc print_beachline { state_name } {
-    upvar 1 $state_name state
-    
-    # поиск самой левой дуги
-    set item $state(T)
-    # спускаемся по "точкам излома", пока не дойдём до "дуги"
-    while {![dict exists $state($item) site]} {
-        set item [dict get $state($item) left]
-    }
-    # сборка "береговой линии"
-    set s ""
-    while {[dict exists $state($item) right]} {
-        set site [dict get $state($item) site]
-        set s "$s[m]$item[n] ([b]$site[n]) - "
-        set item [dict get $state($item) right]
-    }
-    set site [dict get $state($item) site]
-    set s "$s[m]$item[n] ([b]$site[n])"
-    
-    puts "Береговая линия: $s"
-}
-
 proc new_circle {args} {
     set c "c"
     foreach s [lsort -dictionary $args] {
         set c "${c}_[string range $s 1 end]" ;# отрезаем префикс "s" и строим идентификатор вида c_A_B_C, где A,B,C-номера сайтов
     }
     return $c
+}
+
+# вычисляет некий базовый вектор вдоль указанного ребра в таком направлении, чтобы при наблюдении из сайта он смотрел налево
+proc edge_get_direction { state_name edge } {
+    upvar 1 $state_name state
+
+    lassign $state([dict get $state($edge) site]) x y
+    lassign $state([dict get $state([dict get $state($edge) sibling]) site]) sx sy
+
+    if {[dict exists $state($edge) origin]} {
+        # если у границы задан источник, берём его
+        lassign [dict get $state([dict get $state($edge) origin]) point] xo yo
+    } elseif {[dict exists $state($edge) ex-origin]} {
+        lassign [dict get $state([dict get $state($edge) ex-origin]) point] xo yo
+    } elseif {[dict exists $state($edge) target]} {
+        # если задана конечная точка, то её
+        lassign [dict get $state([dict get $state($edge) target]) point] xo yo
+    } elseif {[dict exists $state($edge) ex-target]} {
+        lassign [dict get $state([dict get $state($edge) ex-target]) point] xo yo
+    } else {
+        # если ничего не помогает, то точку в середине между сайтами
+        set xo [expr {($x+$sx)/2}]
+        set yo [expr {($y+$sy)/2}]
+    }
+
+    set vx [expr {$sy-$y}]
+    set vy [expr {$x-$sx}]
+    
+    return [list $xo $yo $vx $vy]
+}
+
+proc get_intersection { x1 y1 dx1 dy1 x2 y2 dx2 dy2 } {
+    set delta [expr {$dx2*$dy1-$dx1*$dy2}]
+    if {$delta==0} { ;# параллельны
+        return 0
+    }
+    set t1 [expr {(($x1-$x2)*$dy2-($y1-$y2)*$dx2)/$delta}]
+    set t2 [expr {(($x1-$x2)*$dy1-($y1-$y2)*$dx1)/$delta}]
+    # вообще такой изврат не требуется и x=x1+t1*dx1=x2+t2*dx2, но численная неустойчивость рассчёта фантастическая. По-хорошему, надо бы выбирать, но пока что усредним
+    set x [expr {($x1+$dx1*$t1+$x2+$dx2*$t2)/2}]
+    set y [expr {($y1+$dy1*$t1+$y2+$dy2*$t2)/2}]
+    return [list $x $y $t1 $t2]
+}
+
+proc intersection_is_good { x y t1 t2 xmin ymin xmax ymax } {
+    if {$x<$xmin} { return 0 }
+    if {$y<$ymin} { return 0 }
+    if {$x>$xmax} { return 0 }
+    if {$y>$ymax} { return 0 }
+    if {$t1<0} { return 0 }
+    return 1
+}
+
+# обрезает бесконечные рёбра и замыкает полуоткрытые ячейки на границе диаграммы
+proc fix_outer_cells { state_name xmin ymin xmax ymax } {
+    upvar 1 $state_name state
+
+    # высчитываем границы, в которые диаграмма помещается целиком
+    lassign [list $xmin $ymin $xmax $ymax] lxmin lymin lxmax lymax
+    foreach {id vertex} [array get state v*] {
+        lassign [dict get $vertex point] x y
+        if {$x<$lxmin} {
+            set lxmin $x
+        } elseif {$x>$lxmax} {
+            set lxmax $x
+        }
+        if {$y<$lymin} {
+            set lymin $y
+        } elseif {$y>$lymax} {
+            set lymax $y
+        }
+    }
+    puts [format "Реальные границы диаграммы: (%g, %g) ÷ (%g, %g)" $lxmin $lymin $lxmax $lymax]
+
+    # Обходим все бесконечные полурёбра, находим их пересечение с границей окна и создаём там вершину
+    # Особый случай, когда в диаграмме нет вершин и все пары полурёбер параллельны и бесконечны, также отрабатывает правильно: в список infinite_edges 
+    # попадают оба полуребра из пары, для каждого из них создаётся одна вершина, и при этом она становится одному из них концом и второму началом
+    # По дороге записываем все сайты, которые засветились на границе
+    array set boundary_sites {}
+    set vni 0 ;# vertex negative index. Индексы отрицательные, поскольку это не настоящие вершины диаграммы Вороного
+    foreach edge $state(infinite_edges) {
+        dict with state($edge) { }
+        set ssite [dict get $state($sibling) site]
+        lassign [edge_get_direction state $edge] xo yo vx vy
+        # здесь используется такое окно, что constraint_vector отработает правильно
+        lassign [constraint_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
+        set vertex "v[incr vni -1]"
+        puts [format "Полуребро [m]$edge[n] ($site): (%g, %g) → (%g, %g); новая \"вершина\" [c]$vertex[n] (%g, %g) ($which_side)" $xo $yo $vx $vy $x $y]
+        lassign $state($site) sx sy ;# хочется найти расстояние от "вершины" до сайтов
+        set r [expr {hypot($x-$sx,$y-$sy)}]
+        # такие "вершины" общие только для двух сайтов
+        set state($vertex) [dict create point [list $x $y] r $r sites [list $site $ssite] sources $sibling sinks $edge]
+        lappend state(V$site) $vertex ;# TODO: сделать нормальную структуру s*
+        lappend state(V$ssite) $vertex
+        dict set state($edge) target $vertex
+        dict set state($sibling) origin $vertex
+        set boundary_sites($site) 1
+    }
+    set state(boundary_sites) [array names boundary_sites]
+    puts "Пограничные сайты: $state(boundary_sites)"
+    
+    # Создаём вершины в углах, нужно только разобраться, к каким сайтам они относятся. Заодно составим отдельный список угловых сайтов.
+    # Это могут быть только сайты на границе — те, в которых были бесконечные рёбра. Мы предусмотрительно их перечислили в предыдущем цикле.
+    foreach x [list $lxmin $lxmin $lxmax $lxmax] y [list $lymin $lymax $lymax $lymin] {
+        # находим ближайший сайт
+        set distance inf
+        set site {}
+        foreach sid $state(boundary_sites) {
+            lassign $state($sid) sx sy
+            set nd [expr {hypot($sx-$x,$sy-$y)}]
+            if {$nd<$distance} {
+                set distance $nd
+                set site $sid
+            }
+        }
+        set vertex "v[incr vni -1]"
+        puts [format "Угловая \"вершина\" [c]$vertex[n] (%g, %g) относится к сайту [m]$site[n] (%g, %g), расстояние %g" $x $y {*}$state($site) $distance]
+        set state($vertex) [dict create point [list $x $y] r $distance sites $site sources {} sinks {}] ;# рёбра пока не создаём
+        lappend state(V$site) $vertex
+    }
 }
 
 # Рассчитывает диаграмму Вороного для набора точек points и обрезает бесконечные рёбра и ячейки по указанному окну
@@ -431,6 +551,8 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
     nextid new_site s ;# сайты
     nextid new_edge e ;# полурёбра
     nextid new_vertex v ;# вершины
+
+    array set state [list infinite_edges {}] ;# здесь соберутся бесконечные границы, торчащие вертикально вверх (чтобы потом их не отыскивать)
 
     # 1. Инициализируем очередь событиями типа "сайт" — входные точки
     foreach p $points {
@@ -447,50 +569,23 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
         puts [format "[G]%g: [y]$evt_type[n][G] $evt_data[n]" $evt_prio]
         # 4. Если это событие "сайт", 5. Обрабатываем как сайт, иначе 6. Обрабатываем как окружность
         handle_${evt_type}_event state $evt_data
-        
-#        print_beachline state
     }
 
     # 7.
-    puts "[B]Остались дуги[n]: [array get state a*]"
-    puts "[Y]Остались точки излома[n]: [array get state b*]"
-    # 8.
-    # Для каждого из полурёбер, у которых не задан target, находим пересечение с границей окна и создаём там вершину, её и назначаем target.
-    # А полуребру-двойнику назначаем эту вершину как origin. Эти новые вершины получают отрицательные индексы (т.к. это не настоящие вершины диаграммы Вороного)
-    set vni 0 ;# vertex negative index
-    foreach {id edge} [array get state e*] {
-        if {[dict exists $edge target]} { continue }
-        dict with edge {
-            if {![info exists origin]} {
-                puts "[r]$id[n]: Полуребро между сайтами [b]$site[n] и [b][dict get $state($sibling) site][n] без начала и конца"
-                continue
-            }
-            # направление вектора вычисляем исходя из сайтов
-            lassign $state($site) x y
-            lassign $state([dict get $state($sibling) site]) sx sy
-            set vx [expr {$sy-$y}]
-            set vy [expr {$x-$sx}]
-            # начало вектора - origin
-            lassign [dict get $state($origin) point] xo yo
-            if {($xo<$xmin)||($xo>$xmax)||($yo<$ymin)||($yo>$ymax)} {
-                puts [format "[r]$id[n]: Начало [r]$origin[n] ([r]%g[n], [r]%g[n]) расположено за пределами окна" $xo $yo]
-                continue
-            }
-            lassign [constraint_vector $xo $yo $vx $vy $xmin $ymin $xmax $ymax] x y
-        }
-        set vertex "v[incr vni -1]"
-        # тут будет максимум два сайта
-        lassign $state($site) sx sy
-        set state($vertex) [dict create point [list $x $y] r [expr {hypot($x-$sx,$y-$sy)}] sites [list $site [dict get $state($sibling) site]] sources $sibling sinks $id]
-        dict set state($id) target $vertex
-        dict set state($sibling) origin $vertex
+#    puts "[B]Остались дуги[n]: [array get state a*]"
+#    puts "[Y]Остались точки излома[n]: [array get state b*]"
+#    puts "[M]Вертикальные бесконечные границы[n]: $state(infinite_edges)"
+    array unset state a*
+    # извлекаем все бесконечные рёбра из оставшихся точек излома и дополняем список бесконечных границ
+    foreach {k v} [array get state b*] {
+        lappend state(infinite_edges) [dict get $v edge]
     }
-    # TODO: Более глобральная постобработка: 
-    # Обрезать также "полные" полурёбра, которые частично вылезают за границы окна (т.е. для которых вершины получились за пределами окна).
-    # Удалять полурёбра, которые лежат целиком вне окна (полные или с неопределённой границей).
-    # Создавать полурёбра, совпадающие с границами окна чтобы замкнуть все пограничные ячейки.
+    array unset state b*
+    # 8.
+    fix_outer_cells state $xmin $ymin $xmax $ymax
     
-    return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get state e*]]
+    # TODO: в структуре ячеек сортировать вершины и рёбра
+    return [dict create {*}[array get state v*] {*}[array get state s*] {*}[array get state e*] {*}[array get state V*] {*}[array get state E*]]
 }
 
 #set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
@@ -503,7 +598,9 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 
 #set points {{0 0} {0 19} {10 0} {10 19} {20 0} {20 19} {0 10} {29 10}}
 
-#set points {{0 0} {649 479}}
+#set points {{0 0} {639 479}}
+
+set points {{1 1} {2 1.1} {3 1} {4 1.1} {5 1} {3 2}}
 
 if 0 {
 set points {
@@ -528,7 +625,15 @@ foreach p $points {
     if {$x>$maxx} { set maxx $x } else { if {$x<$minx} { set minx $x } }
     if {$y>$maxy} { set maxy $y } else { if {$y<$miny} { set miny $y } }
 }
-set scale [expr {min(($width-1)/$maxx,($height-1)/$maxy)}]
+set scale [expr {($width-1.0)/$maxx}]
+set sy [expr {($height-1.0)/$maxy}]
+if {$scale>$sy} {
+    set scale $sy
+    set maxx [expr {($width-1.0)/$scale}]
+} else {
+    set maxy [expr {($height-1.0)/$scale}]
+}
+#set scale [expr {min(($width-1)/$maxx,($height-1)/$maxy)}]
 puts [format "Диапазон координат: [y]%g[n]÷[y]%g[n], [y]%g[n]÷[y]%g[n]; устанавливаем масштаб [c]%g[n]" $minx $maxx $miny $maxy $scale]
 
 set V [compute_voronoi_diagram $points 0 0 $maxx $maxy]
@@ -559,6 +664,17 @@ dict for {k v} $V {
         s* { 
             lassign $v sx sy
             set cnv_ids([.cnv create oval [expr {$sx*$scale-$S_r}] [expr {$sy*$scale-$S_r}] [expr {$sx*$scale+$S_r}] [expr {$sy*$scale+$S_r}] {*}$S_style]) $k
+        }
+        e-* {
+            if {![dict exists $v target]||![dict exists $v origin]} {
+                puts "[r]$k[n]: $v"
+                continue
+            }
+            set target [dict get $v target]
+            set origin [dict get $v origin]
+            lassign [dict get $V $origin point] xo yo
+            lassign [dict get $V $target point] xt yt
+            set cnv_ids([.cnv create line [expr {$xo*$scale}] [expr {$yo*$scale}] [expr {$xt*$scale}] [expr {$yt*$scale}] {*}$E_style]) $k
         }
         e* {
             # все рёбра прорисуются дважды (один раз в каждом направлении)!
@@ -596,8 +712,8 @@ proc clicktoinfo { } {
         } }
         s* { 
             lassign [dict get $V $id] sx sy
-            set tv_sts [format "$id: сайт (%g, %g)" $sx $sy]
-            puts [format "[m]$id[n]: сайт (%g, %g)" $sx $sy]
+            set tv_sts [format "$id: сайт (%g, %g) — вершины [dict get $V V$id], полурёбра [dict get $V E$id]" $sx $sy]
+            puts [format "[m]$id[n]: сайт (%g, %g) — вершины [dict get $V V$id], полурёбра [dict get $V E$id]" $sx $sy]
         }
         e* {
             set sid [dict get $V $id sibling]
@@ -605,16 +721,22 @@ proc clicktoinfo { } {
             set ssite [dict get $V $sid site]
             set v1 [dict get $V $id origin]
             set v2 [dict get $V $id target]
-            set tv_sts "$id+$sid: ребро между $site и $ssite, соединяет вершины $v1 и $v2"
-            puts "[m]$id+$sid[n]: ребро между $site и $ssite, соединяет вершины $v1 и $v2"
+            lassign [dict get $V $v1 point] x1 y1
+            lassign [dict get $V $v2 point] x2 y2
+            set len [expr {hypot($x1-$x2,$y1-$y2)}]
+            set tv_sts [format "$id+$sid: ребро длиной %g между $site и $ssite, соединяет вершины $v1 и $v2" $len]
+            puts [format "[m]$id+$sid[n]: ребро длиной %g между $site и $ssite, соединяет вершины $v1 и $v2" $len]
         }
         te* {
             set eid [string range $id 1 end]
             set sid [dict get $V $eid sibling]
             set site [dict get $V $eid site]
             set ssite [dict get $V $sid site]
-            set tv_sts "Звено, перпендикулярное ребру $eid+$sid, соединяет сайты $site и $ssite"
-            puts "Звено, перпендикулярное ребру [m]$eid+$sid[n], соединяет сайты $site и $ssite"
+            lassign [dict get $V $site] x1 y1
+            lassign [dict get $V $ssite] x2 y2
+            set len [expr {hypot($x1-$x2,$y1-$y2)}]
+            set tv_sts [format "Звено длиной %g, перпендикулярное ребру $eid+$sid, соединяет сайты $site и $ssite" $len]
+            puts [format "Звено длиной %g, перпендикулярное ребру [m]$eid+$sid[n], соединяет сайты $site и $ssite" $len]
         }
     }
 }
