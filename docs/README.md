@@ -7,6 +7,7 @@
 ## Алгоритм Форчуна
 * https://jacquesheunis.com/post/fortunes-algorithm/
 * http://www.skynet.ie/~sos/mapviewer/voronoi.php
+* В треугольнике, с замыканием ячеек https://github.com/Yatoom/voronoi
 * Схлопывается ли дуга? https://stackoverflow.com/questions/9612065/breakpoint-convergence-in-fortunes-algorithm/27882090#27882090
 * Проверка взаимного расположения точек (по часовой стрелке/против) https://math.stackexchange.com/questions/1324179/how-to-tell-if-3-connected-points-are-connected-clockwise-or-counter-clockwise/1324213#1324213
 * Куча прикольных ссылок на ресурсы про алгоритм Форчуна https://stackoverflow.com/questions/982928/confused-with-voronoi-diagram-algorithm-fortunes-sweepline/17182583#17182583
