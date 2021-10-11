@@ -448,6 +448,7 @@ proc edge_get_direction { state_name edge } {
     return [list $xo $yo $vx $vy]
 }
 
+# не используется
 proc get_intersection { x1 y1 dx1 dy1 x2 y2 dx2 dy2 } {
     set delta [expr {$dx2*$dy1-$dx1*$dy2}]
     if {$delta==0} { ;# параллельны
@@ -455,19 +456,10 @@ proc get_intersection { x1 y1 dx1 dy1 x2 y2 dx2 dy2 } {
     }
     set t1 [expr {(($x1-$x2)*$dy2-($y1-$y2)*$dx2)/$delta}]
     set t2 [expr {(($x1-$x2)*$dy1-($y1-$y2)*$dx1)/$delta}]
-    # вообще такой изврат не требуется и x=x1+t1*dx1=x2+t2*dx2, но численная неустойчивость рассчёта фантастическая. По-хорошему, надо бы выбирать, но пока что усредним
+    # вообще такой изврат не требуется и x=x1+t1*dx1=x2+t2*dx2, но численная неустойчивость фантастическая. По-хорошему, надо бы выбирать, но пока что усредним
     set x [expr {($x1+$dx1*$t1+$x2+$dx2*$t2)/2}]
     set y [expr {($y1+$dy1*$t1+$y2+$dy2*$t2)/2}]
     return [list $x $y $t1 $t2]
-}
-
-proc intersection_is_good { x y t1 t2 xmin ymin xmax ymax } {
-    if {$x<$xmin} { return 0 }
-    if {$y<$ymin} { return 0 }
-    if {$x>$xmax} { return 0 }
-    if {$y>$ymax} { return 0 }
-    if {$t1<0} { return 0 }
-    return 1
 }
 
 # обрезает бесконечные рёбра и замыкает полуоткрытые ячейки на границе диаграммы
@@ -536,7 +528,85 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
         puts [format "Угловая \"вершина\" [c]$vertex[n] (%g, %g) относится к сайту [m]$site[n] (%g, %g), расстояние %g" $x $y {*}$state($site) $distance]
         set state($vertex) [dict create point [list $x $y] r $distance sites $site sources {} sinks {}] ;# рёбра пока не создаём
         lappend state(V$site) $vertex
+        lappend corner_sites($site) $vertex ;# одновременно запоминаем, какие сайты в уголках и из их вершин угловые
     }
+    puts "Сайты с угловыми \"вершинами\": [array get corner_sites]"
+    
+    # Замыкаем ячейки. ; для угловых сайтов мудрёнее, может быть одна, две или три угловых вершины и соответственно нужно добавить два, три или четыре полуребра к ним
+    # TODO: вообще-то мы с самого начала этой процедуры можем знать, будут ли у нас пограничные сайты с двумя несвязными рёбрами. Может, постобрабатывать отдельно? 
+    set eni 0 ;# edge negative index. Индексы отрицательные, поскольку это не настоящие рёбра диаграммы Вороного
+    foreach sid $state(boundary_sites) {
+        if {[info exists corner_sites($sid)]} { ;# сайт угловой, может быть одна, две, три висящих вершины, , и не хватать двух, трёх или четырёх 
+        } else { ;# сайт просто пограничный, может либо не хватать одного ребра, либо быть два несвязных ребра и двух не хватать
+            puts "Пограничный сайт [m]$sid[n]: полурёбра $state(E$sid)"
+            if {2==[llength $state(E$sid)]} {
+                lassign $state(E$sid) e1 e2
+                if {![dict exists $state($e1) next]&&![dict exists $state($e1) next]} {
+                    # два ребра, двух не хватает
+                    set e1o [dict get $state($e1) origin]
+                    set e1t [dict get $state($e1) target]
+                    set e2o [dict get $state($e2) origin]
+                    set e2t [dict get $state($e2) target]
+                    set e3 "e[incr eni -1]"
+                    set e4 "e[incr eni -1]"
+                    set state($e3) [dict create site $sid origin $e1t target $e2o next $e2 prev $e1]
+                    set state($e4) [dict create site $sid origin $e2t target $e1o next $e1 prev $e2]
+                    dict_mset state($e1) next $e3 prev $e4
+                    dict_mset state($e2) next $e4 prev $e3
+                    lappend state(E$sid) $e3
+                    lappend state(E$sid) $e4
+                    dict lappend state($e1t) sources $e3
+                    dict lappend state($e1o) sinks $e4
+                    dict lappend state($e2t) sources $e4
+                    dict lappend state($e2o) sinks $e3
+                    puts "Замыкаем: ... -[m]$e1[n]→ ([m]$e1t[n]) -[c]$e3[n]→ ([m]$e2o[n]) -[m]$e2[n]→ ([m]$e2t[n]) -[c]$e4[n]→ ([m]$e1o[n]) -[m]$e1[n]→ ..."
+                } else {
+                    # два ребра, но связаны друг с другом — простейший случай цепочки рёбер, в которой одного не хватает
+                    # код из общего варианта ниже тоже сработал бы, но в данном случае так быстрее
+                    if {[dict exists $state($e1) next]} {
+                        set eA $e1
+                        set eB $e2
+                    } else {
+                        set eA $e2
+                        set eB $e1
+                    }
+                    # разрыв после eB
+                    set v1 [dict get $state($eA) origin]
+                    set v2 [dict get $state($eB) target]
+                    set eC "e[incr eni -1]"
+                    set state($eC) [dict create site $sid origin $v2 target $v1 next $eA prev $eB]
+                    dict set state($eA) prev $eC
+                    dict set state($eB) next $eC
+                    lappend state(E$sid) $eC
+                    dict lappend state($v2) sources $eC
+                    dict lappend state($v1) sinks $eC
+                    puts "Замыкаем: ... -[m]$eB[n]→ ([m]$v2[n]) -[c]$eC[n]→ ([m]$v1[n]) -[m]$eA[n]→ ..."
+                }
+            } else {
+                # не два ребра, это значит, там цепочка рёбер, в которой не хватает одного
+                # берём любое ребро сайта
+                set eA [lindex $state(E$sid) 0]
+                # проходим по prev до начала цепочки
+                while {[dict exists $state($eA) prev]} { set eA [dict get $state($eA) prev] }
+                # берём любое ребро сайта
+                set eB [lindex $state(E$sid) 0]
+                # проходим по next до конца цепочки
+                while {[dict exists $state($eB) next]} { set eB [dict get $state($eB) next] }
+                # разрыв после eB
+                set v1 [dict get $state($eA) origin]
+                set v2 [dict get $state($eB) target]
+                set eC "e[incr eni -1]"
+                set state($eC) [dict create site $sid origin $v2 target $v1 next $eA prev $eB]
+                dict set state($eA) prev $eC
+                dict set state($eB) next $eC
+                lappend state(E$sid) $eC
+                dict lappend state($v2) sources $eC
+                dict lappend state($v1) sinks $eC
+                puts "Замыкаем: ... -[m]$eB[n]→ ([m]$v2[n]) -[c]$eC[n]→ ([m]$v1[n]) -[m]$eA[n]→ ..."
+            }
+        }
+    }
+
 }
 
 # Рассчитывает диаграмму Вороного для набора точек points и обрезает бесконечные рёбра и ячейки по указанному окну
@@ -557,6 +627,10 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
     # 1. Инициализируем очередь событиями типа "сайт" — входные точки
     foreach p $points {
         lassign $p x y
+        # костыль для того, чтобы все числа сделать вещественными
+        set x [expr {1.0*$x}]
+        set y [expr {1.0*$y}]
+        set p [list $x $y]
         set site [new_site]
         set state($site) $p
         events add $y "site" $site
@@ -600,7 +674,9 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 
 #set points {{0 0} {639 479}}
 
-set points {{1 1} {2 1.1} {3 1} {4 1.1} {5 1} {3 2}}
+#set points {{1 1} {2 1.1} {3 1} {4 1.1} {5 1} {3 2}}
+
+#set points {{1 1} {3 2} {5 3} {7 4} {9 5} {11 6}}
 
 if 0 {
 set points {
@@ -615,7 +691,7 @@ set points {
 }
 }
 
-# автовычисление масштаба
+# автовычисление масштаба TODO: может вообще вписывать в окно (т.е. делать окно не от 0 0), добавлять "поля" и т. п.?
 set p0 [lindex $points 0]
 lassign $p0 minx miny
 lassign $p0 maxx maxy
@@ -666,7 +742,7 @@ dict for {k v} $V {
             set cnv_ids([.cnv create oval [expr {$sx*$scale-$S_r}] [expr {$sy*$scale-$S_r}] [expr {$sx*$scale+$S_r}] [expr {$sy*$scale+$S_r}] {*}$S_style]) $k
         }
         e-* {
-            if {![dict exists $v target]||![dict exists $v origin]} {
+            if {![dict exists $v target]||![dict exists $v origin]} { ;# Это здесь временно, в окончательном варианте все "полурёбра" будут с началом и концом
                 puts "[r]$k[n]: $v"
                 continue
             }
@@ -677,8 +753,8 @@ dict for {k v} $V {
             set cnv_ids([.cnv create line [expr {$xo*$scale}] [expr {$yo*$scale}] [expr {$xt*$scale}] [expr {$yt*$scale}] {*}$E_style]) $k
         }
         e* {
-            # все рёбра прорисуются дважды (один раз в каждом направлении)!
-            if {![dict exists $v target]||![dict exists $v origin]} {
+            # все рёбра прорисуются дважды (один раз в каждом направлении)! TODO: что делать-то с этим?
+            if {![dict exists $v target]||![dict exists $v origin]} { ;# Это здесь временно, в окончательном варианте все dполурёбра будут с началом и концом
                 puts "[r]$k[n]: $v"
                 continue
             }
@@ -687,6 +763,7 @@ dict for {k v} $V {
             lassign [dict get $V $origin point] xo yo
             lassign [dict get $V $target point] xt yt
             set cnv_ids([.cnv create line [expr {$xo*$scale}] [expr {$yo*$scale}] [expr {$xt*$scale}] [expr {$yt*$scale}] {*}$E_style]) $k
+            # здесь же добавляем линию "триангуляции"
             lassign [dict get $V [dict get $v site]] sx sy
             lassign [dict get $V [dict get $V [dict get $V $k sibling] site]] sx1 sy1
             set cnv_ids([.cnv create line [expr {$sx1*$scale}] [expr {$sy1*$scale}] [expr {$sx*$scale}] [expr {$sy*$scale}] {*}$T_style]) "t$k"
@@ -696,6 +773,8 @@ dict for {k v} $V {
 .cnv raise edge
 .cnv raise point
 .cnv raise vertex
+.cnv yview moveto 0.0 ;# костыль, чтобы прорисовались границы сверху
+.cnv xview moveto 0.0 ;# костыль, чтобы прорисовались границы слева
 
 proc clicktoinfo { } {
     global V cnv_ids tv_sts
@@ -714,6 +793,16 @@ proc clicktoinfo { } {
             lassign [dict get $V $id] sx sy
             set tv_sts [format "$id: сайт (%g, %g) — вершины [dict get $V V$id], полурёбра [dict get $V E$id]" $sx $sy]
             puts [format "[m]$id[n]: сайт (%g, %g) — вершины [dict get $V V$id], полурёбра [dict get $V E$id]" $sx $sy]
+        }
+        e-* { ;# общий код для полурёбер здесь не работоспособен, т.к. у граничных "полурёбер" с отрицательными индексами не может быть двойников от соседнего сайта
+            set site [dict get $V $id site]
+            set v1 [dict get $V $id origin]
+            set v2 [dict get $V $id target]
+            lassign [dict get $V $v1 point] x1 y1
+            lassign [dict get $V $v2 point] x2 y2
+            set len [expr {hypot($x1-$x2,$y1-$y2)}]
+            set tv_sts [format "$id: \"полуребро\" длиной %g около $site из $v1 в $v2" $len]
+            puts [format "[m]$id[n]: \"полуребро\" длиной %g около $site из $v1 в $v2" $len]
         }
         e* {
             set sid [dict get $V $id sibling]
