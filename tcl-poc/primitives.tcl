@@ -35,6 +35,28 @@ proc find_circle { x1 y1 x2 y2 x3 y3 } {
     return [list $x $y $r]
 }
 
+proc clip_vector { xo yo xd yd xmin ymin xmax ymax } {
+    set y1 [expr {$yo+($xmin-$xo)*$yd/$xd}] ;# x1=xmin
+    set y2 [expr {$yo+($xmax-$xo)*$yd/$xd}] ;# x2=xmax
+    set x3 [expr {$xo+($ymin-$yo)*$xd/$yd}] ;# y3=ymin
+    set x4 [expr {$xo+($ymax-$yo)*$xd/$yd}] ;# y3=ymax
+    if {($ymax>=$y1)&&($y1>=$ymin)} { lappend cand [list $xmin $y1 xmin] }
+    if {($ymax>=$y2)&&($y2>=$ymin)} { lappend cand [list $xmax $y2 xmax] }
+    if {($xmax>=$x3)&&($x3>=$xmin)} { lappend cand [list $x3 $ymin ymin] }
+    if {($xmax>=$x4)&&($x4>=$xmin)} { lappend cand [list $x4 $ymax ymax] }
+    set tmin inf
+    set pref [lindex $cand 0]
+    foreach c $cand {
+        lassign $c x y
+        set t [expr {(abs($xd)>abs($yd))?(($x-$xo)/$xd):(($y-$yo)/$yd)}]
+        if {($t>0)&&($t<$tmin)} {
+            set pref $c
+            set tmin $t
+        }
+    }
+    return $pref
+}
+
 # Если построить луч из точки (xo, yo) вдоль вектора (xd, yd), он пересечёт прямоугольник-границу, заданную xmin, ymin, xmax, ymax,
 # в некоторой точке. Функция возвращает координаты этой точки. Не проверяется, находится ли точка (xo, yo) внутри прямоугольника.
 # Если (xo, yo) находится вне прямоугольника, может возникнуть неопределённое поведение (некорректный результат, исключение).

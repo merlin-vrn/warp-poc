@@ -494,7 +494,8 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
         set ssite [dict get $state($sibling) site]
         lassign [edge_get_direction state $edge] xo yo vx vy
         # здесь используется такое окно, что constraint_vector отработает правильно
-        lassign [constraint_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
+#        lassign [constraint_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
+        lassign [clip_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
         set vertex "v[incr vni -1]"
         puts [format "Полуребро [m]$edge[n] ($site): (%g, %g) → (%g, %g); новая \"вершина\" [c]$vertex[n] (%g, %g) ($which_side)" $xo $yo $vx $vy $x $y]
         lassign $state($site) sx sy ;# хочется найти расстояние от "вершины" до сайтов
@@ -513,6 +514,7 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
     # Создаём вершины в углах, нужно только разобраться, к каким сайтам они относятся. Заодно составим отдельный список угловых сайтов.
     # Это могут быть только сайты на границе — те, в которых были бесконечные рёбра. Мы предусмотрительно их перечислили в предыдущем цикле.
     foreach x [list $lxmin $lxmin $lxmax $lxmax] y [list $lymin $lymax $lymax $lymin] {
+        # TODO: может, проверять, вдруг уже имеется такая вершина?
         # находим ближайший сайт
         set distance inf
         set site {}
@@ -676,7 +678,7 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 
 #set points {{1 1} {2 1.1} {3 1} {4 1.1} {5 1} {3 2}}
 
-#set points {{1 1} {3 2} {5 3} {7 4} {9 5} {11 6}}
+set points {{1 1} {3 2} {5 3} {7 4} {9 5} {11 6}}
 
 if 0 {
 set points {
