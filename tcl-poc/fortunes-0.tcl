@@ -494,7 +494,6 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
         set ssite [dict get $state($sibling) site]
         lassign [edge_get_direction state $edge] xo yo vx vy
         # здесь используется такое окно, что constraint_vector отработает правильно
-#        lassign [constraint_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
         lassign [clip_vector $xo $yo $vx $vy $lxmin $lymin $lxmax $lymax] x y which_side
         set vertex "v[incr vni -1]"
         puts [format "Полуребро [m]$edge[n] ($site): (%g, %g) → (%g, %g); новая \"вершина\" [c]$vertex[n] (%g, %g) ($which_side)" $xo $yo $vx $vy $x $y]
@@ -514,7 +513,12 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
     # Создаём вершины в углах, нужно только разобраться, к каким сайтам они относятся. Заодно составим отдельный список угловых сайтов.
     # Это могут быть только сайты на границе — те, в которых были бесконечные рёбра. Мы предусмотрительно их перечислили в предыдущем цикле.
     foreach x [list $lxmin $lxmin $lxmax $lxmax] y [list $lymin $lymax $lymax $lymin] {
-        # TODO: может, проверять, вдруг уже имеется такая вершина?
+        # TODO: нужно ли проверять, имеется ли уже такая вершина?
+#        foreach {k v} [array get state v*] { dict with v {
+#            lassign $point vx vy
+#            if {$x==$vx&&$y==$vy} continue ;# в этом месте уже есть какая-то вершина
+#        } }
+        
         # находим ближайший сайт
         set distance inf
         set site {}
@@ -538,10 +542,68 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
     # TODO: вообще-то мы с самого начала этой процедуры можем знать, будут ли у нас пограничные сайты с двумя несвязными рёбрами. Может, постобрабатывать отдельно? 
     set eni 0 ;# edge negative index. Индексы отрицательные, поскольку это не настоящие рёбра диаграммы Вороного
     foreach sid $state(boundary_sites) {
-        if {[info exists corner_sites($sid)]} { ;# сайт угловой, может быть одна, две, три висящих вершины, , и не хватать двух, трёх или четырёх 
-            # Алгоритм: отсортировать вершины против часовой стрелки
-            # Между каждой парой вершин быть ребро. Элиминировать из списка все те, которые уже есть
-            # Остальные рёбра добавляем и связываем
+        if {[info exists corner_sites($sid)]} { ;# сайт угловой, может быть одна, две, три висящих вершины, , и не хватать двух, трёх или четырёх
+            puts "Угловой сайт [m]$sid[n]: полурёбра $state(E$sid), вершины $state(V$sid), в том числе висящие $corner_sites($sid)"
+            # Общий aлгоритм: отсортировать вершины против часовой стрелки TODO: здесь будет проблема с совпадающими вершинами, а такое случается
+            # эту проблему можно попробовать решить более умной сортировкой, которая либо учитывает значения next-prev в рёбрах, либо сортирует не просто вершины,
+            # но связные упорядоченные блоки вершин
+            set ox 0.0
+            set oy 0.0
+            set n 0
+            foreach v $state(V$sid) {
+                lassign [dict get $state($v) point] x y
+                set ox [expr {$x+$ox}]
+                set oy [expr {$y+$oy}]
+                incr n
+            }
+            set ox [expr {$ox/$n}]
+            set oy [expr {$oy/$n}]
+            puts [format "    Центр масс: (%g, %g)" $ox $oy]
+            set ang {}
+            foreach v $state(V$sid) {
+                lassign [dict get $state($v) point] x y
+                lappend ang [list [expr {atan2($y-$oy,$x-$ox)}] $v]
+            }
+            set ang [lsort -real -decreasing -index 0 $ang]
+
+            # Создаём такой же список, который "прокручен" на один элемент. В цикле будем выбирать одновременно 
+            # по одному элементу каждого списка и таким образом переберём все последовательные пары.
+            set a2 [lrange $ang 1 end] 
+            lappend a2 [lindex $ang 0]
+            
+            # Подготовка: проходим по рёбрам и создаём список вершина -> ребро, которое в ней начинается и принадлежит сайту sid
+            array unset s_sources
+            foreach e $state(E$sid) { set s_sources([dict get $state($e) origin]) $e }
+
+            # Между каждой последовательной парой вершин должно быть ребро. Проходим по вершинам и создаём те рёбра, которых не хватает
+            set prev ""
+            set first ""
+            foreach vx1 $ang vx2 $a2 {
+                set v1 [lindex $vx1 1]
+                set v2 [lindex $vx2 1]
+                if {[info exists s_sources($v1)]} { ;# такое ребро уже существует
+                    set e $s_sources($v1) 
+                    puts "    ([y]$v1[n]) -[b]$e[n]→  ([y]$v2[n]) — ребро уже существует"
+                } else { ;# такого ребра ещё нет
+                    set e "e[incr eni -1]"
+                    set state($e) [dict create site $sid origin $v1 target $v2]
+                    lappend state(E$sid) $e
+                    dict lappend state($v1) sources $e
+                    dict lappend state($v2) sinks $e
+                    puts "    ([m]$v1[n]) -[c]$e[n]→  ([m]$v2[n])"
+                }
+                # Связывание. Некоторые уже имеющиеся связи мы возможно повторим, но лучше так, чем недосвязать.
+                if {$prev==""} { 
+                    set first $e 
+                } else {
+                    dict set state($e) prev $prev
+                    dict set state($prev) next $e
+                }
+                set prev $e
+            }
+            # Замыкаем контур. После цикла first соедержит самое первое полуребро, а prev — самое последнее, и они тоже должны быть связаны.
+            dict set state($prev) next $first
+            dict set state($first) prev $prev
         } else { ;# сайт просто пограничный, может либо не хватать одного ребра, либо быть два несвязных ребра и двух не хватать
             puts "Пограничный сайт [m]$sid[n]: полурёбра $state(E$sid)"
             if {2==[llength $state(E$sid)]} {
@@ -611,7 +673,6 @@ proc fix_outer_cells { state_name xmin ymin xmax ymax } {
             }
         }
     }
-
 }
 
 # Рассчитывает диаграмму Вороного для набора точек points и обрезает бесконечные рёбра и ячейки по указанному окну
@@ -669,21 +730,13 @@ proc compute_voronoi_diagram { points xmin ymin xmax ymax } {
 
 #set points {{4.0 2.0} {5.0 5.0} {3.0 9.0} {8.0 2.0} {7.0 6.0}}
 #set points $points2
-
-#set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9} {5 5}}
-
-#set points {{0 0} {0 39} {20 0} {20 39} {40 0} {40 39} {0 20} {59 20}}
-#set points {{0 0} {20 0} {20 39} {40 0} {40 39} {59 20}}
-
-#set points {{0 0} {0 19} {10 0} {10 19} {20 0} {20 19} {0 10} {29 10}}
-
+#set points {{5 0} {0 5} {10 5} {5 10} {1 2} {8 1} {9 8} {2 9} {9 2} {1 8} {2 1} {8 9}}
 #set points {{0 0} {639 479}}
-
 #set points {{1 1} {2 1.1} {3 1} {4 1.1} {5 1} {3 2}}
-
-set points {{1 1} {3 2} {5 3} {7 4} {9 5} {11 6}}
+#set points {{1 1} {3 2} {5 3} {7 4} {9 5} {11 6}}
 
 if 0 {
+# Проблемный набор, не отрисовывается, но тут возникают координаты порядка 1e11, возможно, слишком большие для Tk. Посмотрим, что будет после отсечения диаграммы.
 set points {
     {19.999999999501842 19.000000000456083}
     {4.1109658959838403e-10 10.000000000300382}
