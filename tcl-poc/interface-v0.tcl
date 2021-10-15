@@ -239,6 +239,10 @@ set voronoi 0
 grid [ttk::checkbutton .mwin.cmds.voronoi -variable voronoi -text "show Voronoi diagram"] -columnspan 2 -sticky nsew
 set vectors 0
 grid [ttk::checkbutton .mwin.cmds.vectors -variable vectors -text "show morphing vectors and current position dots"] -columnspan 2 -sticky nsew
+set leftinterp 0
+set rightinterp 0
+set leftwarp 0
+set rightwarp 0
 set picture 0
 grid [ttk::checkbutton .mwin.cmds.picture -variable picture -text "show and update morphed picture"] -columnspan 2 -sticky nsew
 
