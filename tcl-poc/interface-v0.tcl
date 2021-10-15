@@ -73,6 +73,9 @@ proc loadimage {i {fname ""}} {
     set heOth [image height $imgOther]
     set screg [list 0 0 [expr {max($wiNew,$wiOth)}] [expr {max($heNew,$heOth)}]]
     foreach j {0 1} {.img$j.cnv configure -scrollregion $screg}
+
+    # это окно тоже нуждается
+    .mwin.cnv configure -scrollregion $screg
 }
 
 proc addpoint_prepare {} {
@@ -207,55 +210,87 @@ proc morphingwindow {} {
 frame .mwin
 
 grid [canvas .mwin.cnv] -sticky nsew
-grid [ttk::scrollbar .mwin.vsb -command [list .mwin.cnv yview] -orient vertical] -sticky nsew -row 0 -column 1
-grid [ttk::scrollbar .mwin.hsb -command [list .mwin.cnv xview] -orient horizontal] -sticky nsew -row 1
+grid [ttk::scrollbar .mwin.vsb -command {.mwin.cnv yview} -orient vertical] -sticky nsew -row 0 -column 1
+grid [ttk::scrollbar .mwin.hsb -command {.mwin.cnv xview} -orient horizontal] -sticky nsew -row 1
 grid columnconfigure .mwin 0 -weight 1
 grid rowconfigure .mwin 0 -weight 1
-.mwin.cnv configure -yscrollcommand [list .mwin.vsb set] -xscrollcommand [list .mwin.hsb set] -scrollregion {0 0 100 100}
+.mwin.cnv configure -yscrollcommand {.mwin.vsb set} -xscrollcommand {.mwin.hsb set} -scrollregion {0 0 100 100}
 set imgM [image create photo -width 100 -height 100]
 .mwin.cnv create image 0 0 -anchor nw -image [set imgM] -tags {img}
 grid [ttk::frame .mwin.cmds] -sticky nsew -row 2 -column 0 -columnspan 2
 grid [ttk::frame .mwin.sclf] -in .mwin.cmds -columnspan 2 -sticky nsew
 set frameno 0
 set frames 1
-proc refineframeno {frameno_arg} {
-    global frameno
-    set frameno [expr {int($frameno_arg)}]
-    redraw_points
-}
 grid [ttk::scale .mwin.sclf.scal -from 0 -to $frames -orient horizontal -variable frameno -command refineframeno] -sticky nsew
 grid columnconfigure .mwin.sclf 0 -weight 1
 grid [ttk::label .mwin.sclf.frno -textvariable frameno] -column 1 -row 0 -sticky nsew
 grid [ttk::label .mwin.sclf._of_ -text " of "] -column 2 -row 0 -sticky nsew
+grid [ttk::spinbox .mwin.sclf.spbx -from 1 -to 300 -increment 1 -command updateframes -width 4 -textvariable frames] -column 3 -row 0 -sticky nsew
+
+# радиокнопки
+set what_to_show "vectors"
+proc radio_wts { value text } { ttk::radiobutton .mwin.cmds.$value -variable what_to_show -command morphingwindow_update -value $value -text $text }
+grid [radio_wts vectors "morphing vectors and current position dots"] - -sticky nsew
+grid [radio_wts voronoi "Voronoi diagram"] - -sticky nsew
+grid [radio_wts leftinterp "left interpolation"] [radio_wts rightinterp "right interpolation"]  -sticky nsew
+grid [radio_wts leftwarp "left warp"] [radio_wts rightwarp "right warp"]  -sticky nsew
+grid [radio_wts picture "resulting picture"] - -sticky nsew
+
+proc rgbtohtmlc { r g b } {
+    return [format #%02X%02X%02X $r $g $b]
+}
+
+# тестовая точка чтобы убедиться, что картинка отображается при выборе соответствующей радиокнопки
+$imgM put [rgbtohtmlc 255 255 255] -to 10 10
+$imgM put [rgbtohtmlc 0 0 0] -to 10 11
+$imgM put [rgbtohtmlc 255 255 255] -to 11 11
+$imgM put [rgbtohtmlc 0 0 0] -to 11 10
+
+proc refineframeno {frameno_arg} {
+    global frameno
+    set frameno [expr {int($frameno_arg)}]
+    morphingwindow_update
+}
 proc updateframes {} {
     global frameno frames
     .mwin.sclf.scal configure -to $frames
     if {$frameno>$frames} {set frameno $frames}
-    redraw_points
+    morphingwindow_update
 }
-grid [ttk::spinbox .mwin.sclf.spbx -from 1 -to 300 -increment 1 -command updateframes -width 4 -textvariable frames] -column 3 -row 0 -sticky nsew
-
-set voronoi 0
-grid [ttk::checkbutton .mwin.cmds.voronoi -variable voronoi -text "show Voronoi diagram"] -columnspan 2 -sticky nsew
-set vectors 0
-grid [ttk::checkbutton .mwin.cmds.vectors -variable vectors -text "show morphing vectors and current position dots"] -columnspan 2 -sticky nsew
-set leftinterp 0
-set rightinterp 0
-set leftwarp 0
-set rightwarp 0
-set picture 0
-grid [ttk::checkbutton .mwin.cmds.picture -variable picture -text "show and update morphed picture"] -columnspan 2 -sticky nsew
-
 proc morphingwindow_update {} {
-    redraw_vectors
-    redraw_points
+    global what_to_show
+    .mwin.cnv itemconfigure all -state hidden
+    switch $what_to_show {
+        vectors {
+            .mwin.cnv itemconfigure "vector||point" -state normal
+            redraw_vectors
+            redraw_points
+        }
+        voronoi {
+        }
+        leftinterp {
+            .mwin.cnv itemconfigure "img" -state normal
+        }
+        rightinterp {
+            .mwin.cnv itemconfigure "img" -state normal
+        }
+        leftwarp {
+            .mwin.cnv itemconfigure "img" -state normal
+        }
+        rightwarp {
+            .mwin.cnv itemconfigure "img" -state normal
+        }
+        picture {
+            .mwin.cnv itemconfigure "img" -state normal
+        }
+    }
 }
 
 proc redraw_vectors {} {
     foreach point [.cmds.tree children {}] {
         set coos [.cmds.tree item $point -values]
         .mwin.cnv delete vector-[lindex $coos 0]
-        .mwin.cnv create line [lreplace $coos 0 0] -fill #000 -tags vector-[lindex $coos 0]
+        .mwin.cnv create line [lreplace $coos 0 0] -fill #000 -tags [list vector vector-[lindex $coos 0]]
     }
 }
 
@@ -267,6 +302,6 @@ proc redraw_points {} {
         set x [expr {int(1.0*([lindex $coos 1]*($frames-$frameno)+[lindex $coos 3]*$frameno)/$frames)}]
         set y [expr {int(1.0*([lindex $coos 2]*($frames-$frameno)+[lindex $coos 4]*$frameno)/$frames)}]
         .mwin.cnv delete point-$i
-        .mwin.cnv create oval [expr {$x-2}] [expr {$y-2}] [expr {$x+2}] [expr {$y+2}] -outline #000 -tags point-$i
+        .mwin.cnv create oval [expr {$x-2}] [expr {$y-2}] [expr {$x+2}] [expr {$y+2}] -outline #000 -tags [list point point-$i]
     }
 }
