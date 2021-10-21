@@ -93,8 +93,6 @@ proc handle_site_event { state_name site } {
 
     # 3. Заменяем найденный объект поддеревом из двух или трёх дуг, 4. Создаём в выходной структуре полурёбра
 
-    set arcs_to_check {} ;# накопитель для дуг, которые мы будем проверять на "схлопывание" в событии окружность (п. 5)
-
     # Собираем новое поддерево взамен убираемого листика
     if {$y==$sy} { ;# если новый сайт и разделяемый лежат на одной высоте, то у нас получится две дуги, а не три
         # Это может произойти только в самом начале, пока мы проходим по сайтам с самой малой координатой y и она у них всех совпадает
@@ -157,8 +155,7 @@ proc handle_site_event { state_name site } {
             set _info "слева новая дуга [c]$narc[n] ([c]$site[n]), справа старая дуга [b]$split_arc[n] ([b]$split_site[n])"
         }
         puts "Точка излома [c]$rbp[n] ($state($rbp)): $_info"
-        lappend arcs_to_check $split_arc
-        lappend arcs_to_check $narc
+        set check_arc $narc
     } else {
         # Строим структуру из трёх дуг: слева оставляем структуру от разбиваемой дуги split_arc, в середине новая дуга, справа клон разбиваемой дуги
         set carc [new_arc]
@@ -171,7 +168,7 @@ proc handle_site_event { state_name site } {
         # Координаты новых полурёбер: точка начала x, py=(x-sx)²/(2(sy-y))+(sy+y)/2
         # Направления полурёбер выбираются такими, чтобы они обходили сайт против часовой стрелки. Т.е. если смотреть на полуребро из сайта, оно смотрит налево.
         # Вектор направления le: vx=sy-y, vy=x-sx, re: в противоположную сторону
-        
+
         set state($le) [dict create sibling $re site $site]
         set state($re) [dict create sibling $le site $split_site]
 
@@ -198,10 +195,9 @@ proc handle_site_event { state_name site } {
             dict set state($rarc) rbp [dict get $state($split_arc) rbp] ;# и этот атрибут должен был быть задан, переносим
         }
         dict_mset state($split_arc) right $carc parent $lbp path left rbp $lbp ;# правый сосед разбиваемой дуги теперь новая дуга carc
-        lappend arcs_to_check $split_arc
-        lappend arcs_to_check $rarc
+        set check_arc $rarc
     }
-    
+
     # Вставляем его в новую позицию
     if {$subpath=={}} {
         puts "    вставляем в корень дерева [m]T[n]"
@@ -210,14 +206,12 @@ proc handle_site_event { state_name site } {
         puts "    вставляем в [g]$parent[n] ($state($parent)) в положение \"[m]$subpath[n]\""
         dict set state($parent) $subpath $rbp
     }
-    
+
     # TODO балансировка дерева
-    
+
     # 5. Проверяем две вновь возникшие тройки соседних дуг на предмет слопывания средней. Добавляем для таких событие "окружность"
-    foreach arc $arcs_to_check {
-        check_add_circle state $arc $y
-    }
-    
+    check_add_circle state $split_arc $y
+    check_add_circle state $check_arc $y ;# это либо narc, либо rarc
 }
 
 # Проверяет тройку дуг с указанной дугой в середине на предмет схлопывания и добавляет событие "окружность".
@@ -229,7 +223,7 @@ proc check_add_circle { state_name carc y } {
         puts "[y]$carc[n] расположено с краю, не может схлопнуться"
         return 0
     }
-    
+
     # Дуги слева и справа
     set larc [dict get $state($carc) left]
     set rarc [dict get $state($carc) right]
