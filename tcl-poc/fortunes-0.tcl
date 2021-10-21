@@ -54,7 +54,8 @@ proc find_arc_above { state_name x y } {
         }
         set subpath [expr {($x<$xlr)?"left":"right"}]
         set item [dict get $state($item) $subpath]
-        puts [format "    точка излома: ([m]%g[n], %g), сайт: ([c]%g[n], %g) — переход [y]$subpath[n] к [m]$item[n]" $xlr $y $x $y]
+        set ylr [expr {sqr($xlr-$xr)/(2*($yr-$y)) + ($yr+$y)/2}]
+        puts [format "    точка излома: ([m]%g[n], %g), сайт: ([c]%g[n], %g) — переход [y]$subpath[n] к [m]$item[n]" $xlr $ylr $x $y]
     }
     return $item
 }
